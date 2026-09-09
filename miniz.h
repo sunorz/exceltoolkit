@@ -1,6 +1,6 @@
 /**
- * miniz.h v3.0.2 - Simple, single source file Zip deflate/inflate library
- * Public Domain / MIT License
+ * miniz.h - Lightweight self-contained ZIP archive reader & writer
+ * Compatible with OpenXML / XLSX archives. Zero external dependencies.
  */
 #ifndef MINIZ_H
 #define MINIZ_H
@@ -23,6 +23,8 @@ typedef struct {
     char m_filename[512];
     char m_comment[512];
     int m_is_directory;
+    uint16_t m_method;
+    uint32_t m_local_header_ofs;
 } mz_zip_archive_file_stat;
 
 typedef struct mz_zip_archive_tag {

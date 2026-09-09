@@ -1,6 +1,6 @@
 # excel-toolkit — Excel 暗水印与保护工具 (C++ 原生独立版 / 零依赖)
 
-对应 Python 版 excel_toolkit 完整逻辑的 C++ 原生重构版，提供现代 Windows 原生 GUI 桌面客户端与跨平台编译支持。
+对应 Python 版 `excel_toolkit.py` 完整逻辑的 C++ 原生重构版，提供现代 Windows 原生 GUI 桌面客户端与跨平台编译支持。
 
 ## 核心功能与 Checkbox 自由组合
 
@@ -21,3 +21,8 @@
 - `build_msvc.bat`: MSVC /MT 静态编译一键脚本。
 - `build_mingw.bat`: MinGW-w64 编译脚本。
 - `.github/workflows/build.yml`: GitHub Actions 自动编译与 Release 发布流水线。
+
+## GitHub Actions 自动构建与发布
+
+- **Push 触发**：自动编译输出 `excel-toolkit-{UNIX时间戳}-beta.exe` 并上传至 Artifacts 供直接下载；
+- **Release 触发**：自动编译输出 `excel-toolkit-v{版本号}-beta.exe` 并自动上传到 Release 附件列表。

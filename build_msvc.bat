@@ -19,7 +19,7 @@ echo [2/3] 正在使用 /MT 静态编译原生 GUI 程序 (无黑框 /SUBSYSTEM:
 cl /nologo /O2 /MT /utf-8 /EHsc /std:c++17 ^
    gui_main.cpp excel_toolkit_core.cpp miniz.c resource.res ^
    /link /SUBSYSTEM:WINDOWS /OUT:excel-toolkit.exe ^
-   comctl32.lib shell32.lib advapi32.lib user32.lib gdi32.lib
+   comctl32.lib shell32.lib advapi32.lib user32.lib gdi32.lib comdlg32.lib
 
 if %errorlevel% equ 0 (
     echo [3/3] 编译成功！

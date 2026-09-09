@@ -23,4 +23,5 @@ target_link_libraries(excel-toolkit
     user32
     gdi32
     advapi32
+    comdlg32
 )

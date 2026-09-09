@@ -19,7 +19,7 @@ g++ -O2 -std=c++17 -municode -mwindows ^
     gui_main.cpp excel_toolkit_core.cpp miniz.c resource.o ^
     -o excel-toolkit.exe ^
     -static -static-libgcc -static-libstdc++ ^
-    -lcomctl32 -lshell32 -ladvapi32 -luser32 -lgdi32
+    -lcomctl32 -lshell32 -ladvapi32 -luser32 -lgdi32 -lcomdlg32
 
 if %errorlevel% equ 0 (
     echo 编译成功！生成独立 GUI 绿色版: excel-toolkit.exe
