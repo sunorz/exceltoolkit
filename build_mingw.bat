@@ -3,7 +3,7 @@ chcp 65001 >nul
 :: 设置构建与链接环境时区为中国标准时间 (CST, UTC+8)
 set TZ=CST-8
 echo ===================================================================
-echo   Excel 暗水印与保护工具 - MinGW 独立 GUI 静态编译脚本 (CST时区 v0.1.0)
+echo   Excel 暗水印与保护工具 - MinGW 独立 GUI 静态编译脚本 (CST时区 v0.1.1)
 echo ===================================================================
 
 where g++ >nul 2>nul
@@ -13,8 +13,8 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [1/2] 编译 Windows 视觉清单资源...
-windres resource.rc -O coff -o resource.o
+echo [1/2] 编译 Windows 视觉清单资源 (UTF-8 代码页 65001)...
+windres -c 65001 resource.rc -O coff -o resource.o
 
 echo [2/2] 正在进行全静态 GUI 链接编译 (-mwindows)...
 g++ -O2 -std=c++17 -DUNICODE -D_UNICODE -municode -mwindows ^

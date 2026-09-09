@@ -58,12 +58,12 @@ jobs:
         with:
           arch: x64
 
-      # 编译 Windows 资源与 Manifest 清单 (时区设置为 CST UTC+8)
+      # 编译 Windows 资源与 Manifest 清单 (时区设置为 CST UTC+8, 代码页 65001 UTF-8 解决中文乱码)
       - name: Compile Resource File (.rc -> .res)
         shell: cmd
         run: |
           set TZ=CST-8
-          rc /nologo /fo resource.res resource.rc
+          rc /nologo /c 65001 /fo resource.res resource.rc
 
       # 使用 /MT 静态编译，生成零 VC++ 运行库依赖的原生 GUI 独立绿色 EXE (无黑框，PE 时间戳为 CST)
       - name: Build Standalone Static GUI EXE (/MT - Zero VC++ Dependency)

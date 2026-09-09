@@ -3,7 +3,7 @@ chcp 65001 >nul
 :: 设置构建与链接环境时区为中国标准时间 (CST, UTC+8)
 set TZ=CST-8
 echo ===================================================================
-echo   Excel 暗水印与保护工具 - MSVC 独立 GUI 静态编译 (CST时区 v0.1.0)
+echo   Excel 暗水印与保护工具 - MSVC 独立 GUI 静态编译 (CST时区 v0.1.1)
 echo ===================================================================
 
 where cl >nul 2>nul
@@ -14,8 +14,8 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [1/3] 编译资源文件 resource.rc...
-rc /nologo resource.rc
+echo [1/3] 编译资源文件 resource.rc (UTF-8 代码页 65001)...
+rc /nologo /c 65001 /fo resource.res resource.rc
 
 echo [2/3] 正在使用 /MT 静态编译原生 GUI 程序 (无黑框 /SUBSYSTEM:WINDOWS)...
 cl /nologo /O2 /MT /utf-8 /DUNICODE /D_UNICODE /EHsc /std:c++17 ^

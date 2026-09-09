@@ -1,3 +1,5 @@
+#pragma code_page(65001)
+
 #include <windows.h>
 
 #ifndef CREATEPROCESS_MANIFEST_RESOURCE_ID
@@ -14,8 +16,8 @@ CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
 1 ICON "app.ico"
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION     0,1,0,0
-PRODUCTVERSION  0,1,0,0
+FILEVERSION     0,1,1,0
+PRODUCTVERSION  0,1,1,0
 FILEFLAGSMASK   0X3FL
 FILEFLAGS       0X0L
 FILEOS          VOS__WINDOWS32
@@ -26,18 +28,30 @@ BEGIN
     BEGIN
         BLOCK "080404B0"
         BEGIN
-            VALUE "CompanyName",      "excel-toolkit Project"
-            VALUE "FileDescription",  "Excel 暗水印与保护工具 (C++ Standalone)"
-            VALUE "FileVersion",      "0.1.0.0"
+            VALUE "CompanyName",      "Sunplace"
+            VALUE "FileDescription",  "来自kkii.org"
+            VALUE "FileVersion",      "0.1.1.0"
             VALUE "InternalName",     "excel-toolkit"
-            VALUE "LegalCopyright",   "Copyright (C) 2026 Open Source"
+            VALUE "LegalCopyright",   "Sunplace"
             VALUE "OriginalFilename", "excel-toolkit.exe"
-            VALUE "ProductName",      "Excel 暗水印与保护工具"
-            VALUE "ProductVersion",   "v0.1.0"
+            VALUE "ProductName",      "Excel工具箱"
+            VALUE "ProductVersion",   "v0.1.1"
+        END
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "Sunplace"
+            VALUE "FileDescription",  "来自kkii.org"
+            VALUE "FileVersion",      "0.1.1.0"
+            VALUE "InternalName",     "excel-toolkit"
+            VALUE "LegalCopyright",   "Sunplace"
+            VALUE "OriginalFilename", "excel-toolkit.exe"
+            VALUE "ProductName",      "Excel工具箱"
+            VALUE "ProductVersion",   "v0.1.1"
         END
     END
     BLOCK "VarFileInfo"
     BEGIN
-        VALUE "Translation", 0x804, 1200
+        VALUE "Translation", 0x804, 1200, 0x409, 1200
     END
 END
+

@@ -67,9 +67,9 @@
 // 状态条
 #define IDC_STATIC_STATUS        1030
 
-#define APP_VERSION_STR          L"v0.1.0"
-#define APP_TITLE_STR            L"Excel 工具箱 v0.1.0"
-#define APP_SUBTITLE_STR         L"工作簿暗水印植入 · 结构锁定 · 密码脱壳取证 (v0.1.0)"
+#define APP_VERSION_STR          L"v0.1.1"
+#define APP_TITLE_STR            L"Excel 工具箱 v0.1.1"
+#define APP_SUBTITLE_STR         L"工作簿暗水印植入 · 结构锁定 · 密码脱壳取证 (v0.1.1)"
 
 // 现代配色规范 (Windows 10 / Fluent UI Palette)
 #define COLOR_WIN_BG             RGB(243, 244, 246)  // 现代浅灰底色 #F3F4F6
