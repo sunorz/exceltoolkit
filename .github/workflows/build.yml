@@ -51,14 +51,14 @@ jobs:
         run: |
           rc /nologo /fo resource.res resource.rc
 
-      # 使用 /MT 静态编译，生成零 VC++ 运行库依赖的独立 EXE
-      - name: Build Standalone Static EXE (/MT - Zero VC++ Dependency)
+      # 使用 /MT 静态编译，生成零 VC++ 运行库依赖的原生 GUI 独立绿色 EXE (无黑框)
+      - name: Build Standalone Static GUI EXE (/MT - Zero VC++ Dependency)
         shell: cmd
         run: |
           cl /nologo /O2 /MT /utf-8 /EHsc /std:c++17 ^
-             main.cpp excel_toolkit_core.cpp miniz.c resource.res ^
-             /link /SUBSYSTEM:CONSOLE /OUT:"%BINARY_NAME%" ^
-             shell32.lib advapi32.lib user32.lib
+             gui_main.cpp excel_toolkit_core.cpp miniz.c resource.res ^
+             /link /SUBSYSTEM:WINDOWS /OUT:"%BINARY_NAME%" ^
+             comctl32.lib shell32.lib advapi32.lib user32.lib gdi32.lib
 
       # 校验输出与文件散列
       - name: Verify Binary Output

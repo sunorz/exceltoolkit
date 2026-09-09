@@ -1,19 +1,13 @@
-cmake_minimum_required(VERSION 3.15)
-project(ExcelToolkit LANGUAGES C CXX)
+cmake_minimum_required(VERSION 3.14)
+project(excel_toolkit C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    add_compile_options(/W3 /utf-8 /EHsc)
-elseif(MINGW)
-    add_compile_options(-Wall)
-    add_link_options(-static -static-libgcc -static-libstdc++)
-endif()
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 set(SOURCES
-    main.cpp
+    gui_main.cpp
     excel_toolkit_core.h
     excel_toolkit_core.cpp
     miniz.h
@@ -21,4 +15,12 @@ set(SOURCES
     resource.rc
 )
 
-add_executable(exceltookit ${SOURCES})
+add_executable(excel-toolkit WIN32 ${SOURCES})
+
+target_link_libraries(excel-toolkit
+    comctl32
+    shell32
+    user32
+    gdi32
+    advapi32
+)
