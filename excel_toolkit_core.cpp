@@ -437,6 +437,44 @@ bool ExcelToolkitCore::InspectWatermarkFile(
             rPos = rEnd;
         }
 
+        // 解析共享字符池 (xl/sharedStrings.xml)
+        std::vector<std::string> sharedStrings;
+        if (pkg.files.find("xl/sharedStrings.xml") != pkg.files.end()) {
+            const std::string& ssXml = pkg.files["xl/sharedStrings.xml"];
+            size_t siPos = 0;
+            while ((siPos = ssXml.find("<si", siPos)) != std::string::npos) {
+                size_t siEnd = ssXml.find("</si>", siPos);
+                if (siEnd == std::string::npos) break;
+                std::string siChunk = ssXml.substr(siPos, siEnd - siPos);
+                std::string tCombined = "";
+                size_t tp = 0;
+                while ((tp = siChunk.find("<t", tp)) != std::string::npos) {
+                    size_t valStart = siChunk.find(">", tp);
+                    if (valStart == std::string::npos) break;
+                    valStart++;
+                    size_t valEnd = siChunk.find("</t>", valStart);
+                    if (valEnd != std::string::npos) {
+                        tCombined += siChunk.substr(valStart, valEnd - valStart);
+                        tp = valEnd + 4;
+                    } else {
+                        break;
+                    }
+                }
+                sharedStrings.push_back(tCombined);
+                siPos = siEnd + 5;
+            }
+        }
+
+        auto findSecPattern = [](const std::string& str) -> std::string {
+            size_t pos = str.find("SEC-");
+            if (pos == std::string::npos) return "";
+            size_t endPos = pos + 4;
+            while (endPos < str.size() && (isalnum((unsigned char)str[endPos]) || str[endPos] == '-' || str[endPos] == '_')) {
+                endPos++;
+            }
+            return str.substr(pos, endPos - pos);
+        };
+
         size_t sPos = 0;
         std::string hiddenSheetXmlPath = "";
 
@@ -474,10 +512,13 @@ bool ExcelToolkitCore::InspectWatermarkFile(
                 outInfo.hasHiddenSheet = true;
                 if (rIdToTarget.find(rId) != rIdToTarget.end()) {
                     std::string t = rIdToTarget[rId];
-                    if (t.rfind("worksheets/", 0) == 0) {
-                        hiddenSheetXmlPath = "xl/" + t;
-                    } else if (t.rfind("xl/", 0) == 0) {
+                    while (!t.empty() && (t[0] == '/' || t[0] == '\\')) t.erase(0, 1);
+                    if (t.rfind("./", 0) == 0) t.erase(0, 2);
+
+                    if (t.rfind("xl/", 0) == 0) {
                         hiddenSheetXmlPath = t;
+                    } else if (t.rfind("worksheets/", 0) == 0) {
+                        hiddenSheetXmlPath = "xl/" + t;
                     } else {
                         hiddenSheetXmlPath = "xl/worksheets/" + t;
                     }
@@ -489,27 +530,86 @@ bool ExcelToolkitCore::InspectWatermarkFile(
             sPos = sEnd;
         }
 
-        if (outInfo.hasHiddenSheet && !hiddenSheetXmlPath.empty() && pkg.files.find(hiddenSheetXmlPath) != pkg.files.end()) {
-            const std::string& hXml = pkg.files[hiddenSheetXmlPath];
+        auto extractCellText = [&](const std::string& ref, const std::string& xml) -> std::string {
+            size_t cPos = xml.find("<c r=\"" + ref + "\"");
+            if (cPos == std::string::npos) return "";
+            size_t cEnd = xml.find("</c>", cPos);
+            if (cEnd == std::string::npos) cEnd = xml.find("/>", cPos);
+            if (cEnd == std::string::npos) return "";
+            std::string cContent = xml.substr(cPos, cEnd - cPos + 4);
 
-            auto extractCellText = [&](const std::string& ref) -> std::string {
-                size_t cPos = hXml.find("<c r=\"" + ref + "\"");
-                if (cPos == std::string::npos) return "";
-                size_t cEnd = hXml.find("</c>", cPos);
-                if (cEnd == std::string::npos) return "";
-                std::string cContent = hXml.substr(cPos, cEnd - cPos);
-                size_t tPos = cContent.find("<t>");
-                if (tPos == std::string::npos) tPos = cContent.find("<t ");
-                if (tPos == std::string::npos) return "";
+            if (cContent.find("t=\"s\"") != std::string::npos) {
+                size_t vPos = cContent.find("<v>");
+                if (vPos != std::string::npos) {
+                    size_t vEnd = cContent.find("</v>", vPos);
+                    if (vEnd != std::string::npos) {
+                        std::string idxStr = cContent.substr(vPos + 3, vEnd - (vPos + 3));
+                        try {
+                            size_t idx = std::stoul(idxStr);
+                            if (idx < sharedStrings.size()) {
+                                return sharedStrings[idx];
+                            }
+                        } catch (...) {}
+                    }
+                }
+            }
+
+            size_t tPos = cContent.find("<t>");
+            if (tPos == std::string::npos) tPos = cContent.find("<t ");
+            if (tPos != std::string::npos) {
                 size_t tValStart = cContent.find(">", tPos) + 1;
                 size_t tValEnd = cContent.find("</t>", tValStart);
-                if (tValEnd == std::string::npos) return "";
-                return cContent.substr(tValStart, tValEnd - tValStart);
-            };
+                if (tValEnd != std::string::npos) {
+                    return cContent.substr(tValStart, tValEnd - tValStart);
+                }
+            }
 
-            outInfo.traceId = extractCellText("B1");
-            outInfo.watermarkText = extractCellText("B2");
-            outInfo.createdAt = extractCellText("B3");
+            size_t vPos = cContent.find("<v>");
+            if (vPos != std::string::npos) {
+                size_t vEnd = cContent.find("</v>", vPos);
+                if (vEnd != std::string::npos) {
+                    return cContent.substr(vPos + 3, vEnd - (vPos + 3));
+                }
+            }
+            return "";
+        };
+
+        if (outInfo.hasHiddenSheet) {
+            if (hiddenSheetXmlPath.empty() || pkg.files.find(hiddenSheetXmlPath) == pkg.files.end()) {
+                for (const auto& kv : pkg.files) {
+                    if (kv.first.find("sheet_sysdata_cfg") != std::string::npos) {
+                        hiddenSheetXmlPath = kv.first;
+                        break;
+                    }
+                }
+            }
+
+            if (!hiddenSheetXmlPath.empty() && pkg.files.find(hiddenSheetXmlPath) != pkg.files.end()) {
+                const std::string& hXml = pkg.files[hiddenSheetXmlPath];
+                outInfo.traceId = extractCellText("B1", hXml);
+                outInfo.watermarkText = extractCellText("B2", hXml);
+                outInfo.createdAt = extractCellText("B3", hXml);
+
+                if (outInfo.traceId.empty()) {
+                    outInfo.traceId = findSecPattern(hXml);
+                }
+            }
+        }
+
+        // 全盘检索：若 traceId 仍未抓取到，从 sharedStrings 及所有工作表 XML 中检索 SEC- 溯源码
+        if (outInfo.traceId.empty()) {
+            for (const auto& kv : pkg.files) {
+                if (kv.first.find("xl/worksheets/") != std::string::npos ||
+                    kv.first == "xl/sharedStrings.xml" ||
+                    kv.first == "xl/workbook.xml") {
+                    std::string sec = findSecPattern(kv.second);
+                    if (!sec.empty()) {
+                        outInfo.traceId = sec;
+                        outInfo.hasHiddenSheet = true;
+                        break;
+                    }
+                }
+            }
         }
 
         return true;
