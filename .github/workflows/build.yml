@@ -1,0 +1,93 @@
+name: Build excel-toolkit (EXE & Release)
+
+on:
+  push:
+    branches: [ main, master ]
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-package:
+    name: Build Standalone Windows EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # 动态计算生成二进制的名称
+      - name: Compute Binary Output Name
+        id: naming
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'release') {
+            # 发布 Release 时: excel-toolkit-v{版本号}-beta.exe
+            $tag = $env:GITHUB_REF_NAME
+            # 移除可能重复的 v 前缀以便统一格式
+            $cleanVersion = $tag -replace '^v', ''
+            $outputName = "excel-toolkit-v$cleanVersion-beta.exe"
+            Write-Host "Release 触发! 输出文件名: $outputName"
+          } else {
+            # 每次 Push 时: excel-toolkit-{UNIX时间戳}-beta.exe
+            $unixTime = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            $outputName = "excel-toolkit-$unixTime-beta.exe"
+            Write-Host "Push 触发! 输出文件名: $outputName"
+          }
+          "BINARY_NAME=$outputName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # 配置 MSVC 64位编译环境
+      - name: Setup MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # 编译 Windows 资源与 Manifest 清单
+      - name: Compile Resource File (.rc -> .res)
+        shell: cmd
+        run: |
+          rc /nologo /fo resource.res resource.rc
+
+      # 使用 /MT 静态编译，生成零 VC++ 运行库依赖的独立 EXE
+      - name: Build Standalone Static EXE (/MT - Zero VC++ Dependency)
+        shell: cmd
+        run: |
+          cl /nologo /O2 /MT /utf-8 /EHsc /std:c++17 ^
+             main.cpp excel_toolkit_core.cpp miniz.c resource.res ^
+             /link /SUBSYSTEM:CONSOLE /OUT:"%BINARY_NAME%" ^
+             shell32.lib advapi32.lib user32.lib
+
+      # 校验输出与文件散列
+      - name: Verify Binary Output
+        shell: pwsh
+        run: |
+          if (Test-Path "$env:BINARY_NAME") {
+            $file = Get-Item "$env:BINARY_NAME"
+            Write-Host "=================================================="
+            Write-Host "🎉 编译成功: $($file.Name)"
+            Write-Host "📦 文件大小: $([math]::Round($file.Length / 1024, 2)) KB"
+            Get-FileHash -Algorithm SHA256 "$env:BINARY_NAME" | Format-List
+            Write-Host "=================================================="
+          } else {
+            Write-Error "未能生成目标文件 $env:BINARY_NAME!"
+            exit 1
+          }
+
+      # Push 触发时上传构建产物 (excel-toolkit-{UNIX时间戳}-beta.exe)
+      - name: Upload Build Artifact on Push
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}
+          path: ${{ env.BINARY_NAME }}
+          if-no-files-found: error
+
+      # Release 触发时上传至 Release 资产附件 (excel-toolkit-v{版本号}-beta.exe)
+      - name: Upload Binary to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.BINARY_NAME }}
