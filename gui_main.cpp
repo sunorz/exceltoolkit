@@ -313,24 +313,24 @@ void RealignControls(int clientWidth, int clientHeight) {
     int btnExecY = cardY + cardH - btnExecH - Scale(16);
     SetWindowPos(g_hBtnExecuteProcess, NULL, innerX, btnExecY, innerW, btnExecH, SWP_NOZORDER | SWP_NOACTIVATE);
 
-    // 5. Tab 2【脱壳】控件布局
-    int inspBtnY = fileInputY + inputH + Scale(16);
+    // 5. Tab 2【脱壳】控件布局 (左右双栏现代仪表盘，彻底告别矮小狭窄与多余滚动条)
+    int inspBtnY = fileInputY + inputH + Scale(14);
     int inspBtnH = Scale(38);
     SetWindowPos(g_hBtnStartInspect, NULL, innerX, inspBtnY, innerW, inspBtnH, SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int listLblY = inspBtnY + inspBtnH + Scale(12);
-    SetWindowPos(g_hLblSheetsList, NULL, innerX, listLblY, innerW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
+    int contentSecY = inspBtnY + inspBtnH + Scale(12);
+    int contentSecH = btnExecY - contentSecY - Scale(14);
 
-    int listY = listLblY + Scale(24);
-    int listH = Scale(96);
-    SetWindowPos(g_hListSheets, NULL, innerX, listY, innerW, listH, SWP_NOZORDER | SWP_NOACTIVATE);
+    // 左栏：工作表清单 (占宽 40%)
+    int leftColW = (innerW - Scale(14)) * 38 / 100;
+    SetWindowPos(g_hLblSheetsList, NULL, innerX, contentSecY, leftColW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_hListSheets, NULL, innerX, contentSecY + Scale(24), leftColW, contentSecH - Scale(24), SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int resLblY = listY + listH + Scale(10);
-    SetWindowPos(g_hLblInspectRes, NULL, innerX, resLblY, innerW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
-
-    int resEditY = resLblY + Scale(24);
-    int resEditH = btnExecY - resEditY - Scale(14);
-    SetWindowPos(g_hEditInspectResult, NULL, innerX, resEditY, innerW, resEditH, SWP_NOZORDER | SWP_NOACTIVATE);
+    // 右栏：暗水印取证与详情 (占宽 60%，充足高度 100% 完整展示全部信息，无需滚动)
+    int rightColX = innerX + leftColW + Scale(14);
+    int rightColW = innerW - leftColW - Scale(14);
+    SetWindowPos(g_hLblInspectRes, NULL, rightColX, contentSecY, rightColW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_hEditInspectResult, NULL, rightColX, contentSecY + Scale(24), rightColW, contentSecH - Scale(24), SWP_NOZORDER | SWP_NOACTIVATE);
 
     // 主操作大按钮 2 (一键脱壳)
     SetWindowPos(g_hBtnQuickUnprotect, NULL, innerX, btnExecY, innerW, btnExecH, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -724,7 +724,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                                            0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
 
         g_hEditInspectResult = CreateWindowExW(0, L"EDIT", L"尚未扫描，请载入 Excel 文件并点击上方按钮开始解析。",
-                                                WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
+                                                WS_CHILD | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
                                                 0, 0, 100, 20, hWnd, (HMENU)IDC_EDIT_INSPECT_RESULT, g_hInstance, NULL);
 
         g_hBtnQuickUnprotect = CreateWindowExW(0, L"BUTTON", L"🔓 一键脱壳解锁 (清除工作簿与工作表全部密码和保护)",
@@ -769,28 +769,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         HBRUSH hBrWhite = CreateSolidBrush(COLOR_CARD_BG);
         FillRect(hdc, &rcHeader, hBrWhite);
 
-        // 绘制 Excel 翡翠绿现代方块 Logo
-        int logoSize = Scale(32);
-        int logoX = Scale(22);
-        int logoY = Scale(12);
-        RECT rcLogo = { logoX, logoY, logoX + logoSize, logoY + logoSize };
-        HBRUSH hBrLogo = CreateSolidBrush(COLOR_EXCEL_GREEN);
-        RoundRect(hdc, rcLogo.left, rcLogo.top, rcLogo.right, rcLogo.bottom, Scale(6), Scale(6));
-        DeleteObject(hBrLogo);
+        // 绘制大标题与副标题 (现代 Fluent 极简左对齐排版)
+        int textX = Scale(22);
+        int titleY = Scale(11);
 
         SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, RGB(255, 255, 255));
         HFONT hOldFont = (HFONT)SelectObject(hdc, g_hFontHeaderTitle);
-        DrawTextW(hdc, L"X", 1, &rcLogo, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-
-        // 绘制标题与副标题
         SetTextColor(hdc, COLOR_TEXT_MAIN);
-        RECT rcTitle = { logoX + logoSize + Scale(12), logoY - Scale(1), rcClient.right - Scale(20), logoY + Scale(18) };
+        RECT rcTitle = { textX, titleY, rcClient.right - Scale(20), titleY + Scale(20) };
         DrawTextW(hdc, L"Excel 工具箱", -1, &rcTitle, DT_LEFT | DT_SINGLELINE);
 
         SelectObject(hdc, g_hFontHeaderSubtitle);
         SetTextColor(hdc, COLOR_TEXT_MUTED);
-        RECT rcSubtitle = { logoX + logoSize + Scale(12), logoY + Scale(18), rcClient.right - Scale(20), logoY + Scale(34) };
+        RECT rcSubtitle = { textX, titleY + Scale(21), rcClient.right - Scale(20), titleY + Scale(38) };
         DrawTextW(hdc, L"工作簿暗水印植入 · 结构锁定 · 密码脱壳取证 (Windows 10/11 原生版)", -1, &rcSubtitle, DT_LEFT | DT_SINGLELINE);
 
         // Header 下方细分割线
@@ -989,8 +980,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     }
     if (g_dpi < 96) g_dpi = 96;
 
-    int initialWidth  = Scale(760);
-    int initialHeight = Scale(590);
+    int initialWidth  = Scale(780);
+    int initialHeight = Scale(650);
 
     g_hMainWnd = CreateWindowW(L"ExcelToolkitGUI", L"Excel 工具箱",
                                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
