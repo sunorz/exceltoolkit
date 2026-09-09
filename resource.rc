@@ -14,8 +14,8 @@ CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
 1 ICON "app.ico"
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION     2,0,0,0
-PRODUCTVERSION  2,0,0,0
+FILEVERSION     0,1,0,0
+PRODUCTVERSION  0,1,0,0
 FILEFLAGSMASK   0X3FL
 FILEFLAGS       0X0L
 FILEOS          VOS__WINDOWS32
@@ -28,12 +28,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "excel-toolkit Project"
             VALUE "FileDescription",  "Excel 暗水印与保护工具 (C++ Standalone)"
-            VALUE "FileVersion",      "2.0.0.0"
+            VALUE "FileVersion",      "0.1.0.0"
             VALUE "InternalName",     "excel-toolkit"
             VALUE "LegalCopyright",   "Copyright (C) 2026 Open Source"
             VALUE "OriginalFilename", "excel-toolkit.exe"
             VALUE "ProductName",      "Excel 暗水印与保护工具"
-            VALUE "ProductVersion",   "2.0.0.0"
+            VALUE "ProductVersion",   "v0.1.0"
         END
     END
     BLOCK "VarFileInfo"

@@ -118,9 +118,15 @@ std::string ExcelToolkitCore::GenerateRandomHex8() {
 std::string ExcelToolkitCore::GetIsoTimestampNow() {
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
-    std::stringstream ss;
-    ss << std::put_time(std::localtime(&in_time_t), "%Y-%m-%dT%H:%M:%S");
-    return ss.str();
+    // 强制转换为中国标准时间 CST (UTC+8)
+    std::time_t cst_time = in_time_t + 8 * 3600;
+    std::tm* gmt = std::gmtime(&cst_time);
+    char buf[64] = { 0 };
+    if (gmt) {
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S (CST)", gmt);
+        return std::string(buf);
+    }
+    return "2026-09-09 15:00:00 (CST)";
 }
 
 uint16_t ExcelToolkitCore::ComputeExcelPasswordHash(const std::string& password) {
