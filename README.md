@@ -1,24 +1,27 @@
-# excel-toolkit — Excel 暗水印与保护工具 (C++ 原生独立版 / 零依赖)
+# Excel工具箱 (excel-toolkit) — C++ 原生独立版 (Windows 10/11 现代 Fluent 版)
 
-对应 Python 版 `excel_toolkit.py` 完整逻辑的 C++ 原生重构版，提供现代 Windows 原生 GUI 桌面客户端与跨平台编译支持。
+对应完整底层业务逻辑的 C++ 原生重构版，提供现代 Windows 10/11 原生 GUI 桌面客户端与跨平台编译支持。
 
-## 核心功能与 Checkbox 自由组合
+## 核心设计与模块架构
 
-1. **[✓] 添加暗水印**：在 Excel (.xlsx / .xls) 中写入 `veryHidden` 深度隐藏工作表 `~sysdata_cfg`，记录溯源编号、水印文字和 ISO 生成时间。
-2. **[✓] 锁定工作簿结构**：写入 `lockStructure="1"`，彻底置灰 Excel“取消隐藏”菜单，防止窥探暗水印表。
-3. **[✓] 锁定工作表内容**：遍历所有工作表写入 `sheetProtection`，禁止单元格编辑与排版修改。
-4. **[ ] 一键解除保护**：一键清空工作簿与工作表的全部密码与保护限制。
-5. **暗水印取证与查看**：扫描工作簿所有 Sheet 及其可见性状态（visible/hidden/veryHidden），解析隐藏表中的溯源编号与水印文字。
+1. **卡片 1【加工】**：
+   - **写入 veryHidden 隐性暗水印工作表**：在 Excel (.xlsx / .xls) 中写入深度隐藏工作表 `~sysdata_cfg`，记录防伪溯源编号、暗水印文字与时间戳。
+   - **锁定工作簿结构**：写入 `lockStructure="1"`，置灰 Excel“取消隐藏”菜单，防止恶意窥探或篡改暗水印表。
+   - **锁定工作表内容**：遍历所有工作表写入 `sheetProtection`，启用单元格只读防篡改保护。
+2. **卡片 2【脱壳】**：
+   - **工作表结构与暗水印扫描**：深度扫描所有 Sheet 及其可见性状态（正常可见 visible / 普通隐藏 hidden / 深度隐藏 veryHidden），解析隐性暗水印特征与溯源编号。
+   - **一键脱壳解锁**：一键清除工作簿结构保护与所有工作表哈希密码，还原干净可编辑状态。
 
 ## 目录文件清单
 
-- `gui_main.cpp`: Windows 原生 GUI 图形界面程序，支持拖拽、复选框自由组合、无控制台黑框。
-- `excel_toolkit_core.h` / `excel_toolkit_core.cpp`: 核心 OpenXML 解析与处理模块，内存级 ZIP 读写，杜绝闪退。
+- `app.ico`: Windows 应用程序立体多分辨率图标 (256/48/32/16)。
+- `gui_main.cpp`: Windows 10/11 原生 GUI 图形界面程序，支持拖拽、高 DPI 自适应、全 Unicode 宽字符流、无控制台黑框。
+- `excel_toolkit_core.h` / `excel_toolkit_core.cpp`: 核心 OpenXML 内存流解析引擎，零临时文件残留，杜绝崩溃。
 - `main.cpp`: 控制台命令行版本。
-- `miniz.h` / `miniz.c`: 内嵌轻量压缩解压库。
-- `resource.rc`: Windows 资源文件与版本信息。
-- `CMakeLists.txt`: CMake 构建清单。
-- `build_msvc.bat`: MSVC /MT 静态编译一键脚本。
+- `miniz.h` / `miniz.c`: 内嵌 RFC1951 Deflate/ZIP 引擎。
+- `resource.rc`: Windows 视觉清单、版本信息及主图标资源。
+- `CMakeLists.txt`: CMake 跨平台构建清单。
+- `build_msvc.bat`: MSVC /MT 静态单文件编译一键脚本 (无 VC++ 运行库依赖)。
 - `build_mingw.bat`: MinGW-w64 编译脚本。
 - `.github/workflows/build.yml`: GitHub Actions 自动编译与 Release 发布流水线。
 

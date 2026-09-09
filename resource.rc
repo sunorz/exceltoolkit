@@ -1,5 +1,8 @@
 #include <windows.h>
 
+// 应用程序主图标 (ID = 1, 供 Windows 资源管理器与任务栏加载)
+1 ICON "app.ico"
+
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION     2,0,0,0
 PRODUCTVERSION  2,0,0,0

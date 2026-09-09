@@ -15,11 +15,11 @@ echo [1/2] 编译 Windows 视觉清单资源...
 windres resource.rc -O coff -o resource.o
 
 echo [2/2] 正在进行全静态 GUI 链接编译 (-mwindows)...
-g++ -O2 -std=c++17 -municode -mwindows ^
+g++ -O2 -std=c++17 -DUNICODE -D_UNICODE -municode -mwindows ^
     gui_main.cpp excel_toolkit_core.cpp miniz.c resource.o ^
     -o excel-toolkit.exe ^
     -static -static-libgcc -static-libstdc++ ^
-    -lcomctl32 -lshell32 -ladvapi32 -luser32 -lgdi32 -lcomdlg32
+    -lcomctl32 -lshell32 -ladvapi32 -luser32 -lgdi32 -lcomdlg32 -luxtheme
 
 if %errorlevel% equ 0 (
     echo 编译成功！生成独立 GUI 绿色版: excel-toolkit.exe

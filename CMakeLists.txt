@@ -15,6 +15,8 @@ set(SOURCES
     resource.rc
 )
 
+add_compile_definitions(UNICODE _UNICODE)
+
 add_executable(excel-toolkit WIN32 ${SOURCES})
 
 target_link_libraries(excel-toolkit
@@ -24,4 +26,5 @@ target_link_libraries(excel-toolkit
     gdi32
     advapi32
     comdlg32
+    uxtheme
 )

@@ -55,10 +55,10 @@ jobs:
       - name: Build Standalone Static GUI EXE (/MT - Zero VC++ Dependency)
         shell: cmd
         run: |
-          cl /nologo /O2 /MT /utf-8 /EHsc /std:c++17 ^
+          cl /nologo /O2 /MT /utf-8 /DUNICODE /D_UNICODE /EHsc /std:c++17 ^
              gui_main.cpp excel_toolkit_core.cpp miniz.c resource.res ^
              /link /SUBSYSTEM:WINDOWS /OUT:"%BINARY_NAME%" ^
-             comctl32.lib shell32.lib advapi32.lib user32.lib gdi32.lib comdlg32.lib
+             comctl32.lib shell32.lib advapi32.lib user32.lib gdi32.lib comdlg32.lib uxtheme.lib
 
       # 校验输出与文件散列
       - name: Verify Binary Output
