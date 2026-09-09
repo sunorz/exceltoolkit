@@ -27,5 +27,5 @@
 
 ## GitHub Actions 自动构建与发布
 
-- **Push 触发**：自动编译输出 `excel-toolkit-{UNIX时间戳}-beta.exe` 并上传至 Artifacts 供直接下载；
-- **Release 触发**：自动编译输出 `excel-toolkit-v{版本号}-beta.exe` 并自动上传到 Release 附件列表。
+- **Push 触发**：自动编译输出 `excel-toolkit-{UNIX时间戳}-beta.exe` 并上传至 Artifacts 供测试下载；
+- **Release 触发**：自动编译输出 `excel-toolkit-{和release关联的tagname}-release.exe` 并自动上传到 Release Assets 资产列表。

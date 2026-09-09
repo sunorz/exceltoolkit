@@ -14,8 +14,17 @@ jobs:
   build-and-package:
     name: Build Standalone Windows EXE
     runs-on: windows-latest
+    env:
+      TZ: 'Asia/Shanghai'
 
     steps:
+      # 设置 Windows 虚拟机系统级时区为中国标准时间 (CST / UTC+8)
+      - name: Set System TimeZone to China Standard Time (UTC+8)
+        shell: pwsh
+        run: |
+          tzutil /s "China Standard Time"
+          Write-Host "Windows System Time is now set to:" (Get-Date -Format "yyyy-MM-dd HH:mm:ss (zzz)")
+
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
@@ -25,12 +34,16 @@ jobs:
         shell: pwsh
         run: |
           if ($env:GITHUB_EVENT_NAME -eq 'release') {
-            # 发布 Release 时: excel-toolkit-v{版本号}-beta.exe
-            $tag = $env:GITHUB_REF_NAME
-            # 移除可能重复的 v 前缀以便统一格式
-            $cleanVersion = $tag -replace '^v', ''
-            $outputName = "excel-toolkit-v$cleanVersion-beta.exe"
-            Write-Host "Release 触发! 输出文件名: $outputName"
+            # 发布 Release 时: excel-toolkit-{和release关联的tagname}-release.exe
+            $tag = "${{ github.event.release.tag_name }}"
+            if (-not $tag) {
+              $tag = $env:GITHUB_REF_NAME
+            }
+            if (-not $tag) {
+              $tag = $env:GITHUB_REF -replace '^refs/tags/', ''
+            }
+            $outputName = "excel-toolkit-$tag-release.exe"
+            Write-Host "Release 触发! 关联 Tag: $tag, 输出文件名: $outputName"
           } else {
             # 每次 Push 时: excel-toolkit-{UNIX时间戳}-beta.exe
             $unixTime = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
