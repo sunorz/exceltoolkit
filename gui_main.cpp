@@ -79,6 +79,8 @@
 #define COLOR_BLUE_ACCENT        RGB(0, 120, 212)    // 现代深青蓝 #0078D4
 #define COLOR_BLUE_HOVER         RGB(16, 110, 190)   // 悬停蓝 #106EBE
 #define COLOR_BLUE_PRESS         RGB(0, 90, 158)     // 按下蓝 #005A9E
+#define COLOR_EDIT_BG            RGB(248, 250, 252)  // 输入框精致浅灰底纹 #F8FAFC
+#define COLOR_EDIT_TEXT          RGB(15, 23, 42)     // 输入框清晰深色文字 #0F172A
 #define COLOR_EDIT_BORDER        RGB(209, 213, 219)  // 输入框细边框 #D1D5DB
 
 // DPI 缩放引擎
@@ -93,6 +95,7 @@ HINSTANCE g_hInstance = NULL;
 HWND g_hMainWnd = NULL;
 HBRUSH g_hBrushWinBg = NULL;
 HBRUSH g_hBrushCardBg = NULL;
+HBRUSH g_hBrushEditBg = NULL;
 
 // 顶部现代化 Tab 按钮
 HWND g_hBtnTab1 = NULL;
@@ -165,9 +168,9 @@ std::string WStringToUtf8(const std::wstring& wstr) {
 
 std::wstring GenerateTraceId() {
     auto now = std::chrono::system_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    auto sec = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
     std::wstringstream wss;
-    wss << L"SEC-" << std::hex << std::uppercase << (ms & 0xFFFFFF) << L"-" << (rand() % 9000 + 1000);
+    wss << L"SEC-" << sec;
     return wss.str();
 }
 
@@ -279,34 +282,40 @@ void RealignControls(int clientWidth, int clientHeight) {
     SetWindowPos(g_hEditFilePath, NULL, innerX, fileInputY, editFileW, inputH, SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_hBtnBrowse, NULL, innerX + editFileW + Scale(10), fileInputY, browseBtnW, inputH, SWP_NOZORDER | SWP_NOACTIVATE);
 
-    // 4. Tab 1【加工】控件布局
-    int wmSecY = fileInputY + inputH + Scale(18);
+    // 4. Tab 1【加工】控件布局 (像素级严格网格对齐)
+    int wmSecY = fileInputY + inputH + Scale(20);
     SetWindowPos(g_hChkAddWm, NULL, innerX, wmSecY, innerW, Scale(24), SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int rowWmY = wmSecY + Scale(28);
-    int lblW = Scale(92);
+    int lblW = Scale(108); // 统一标签宽度，确保所有冒号和输入框左边缘像素级严格对齐
+    int inputX = innerX + lblW + Scale(8);
+    int totalInputW = innerW - lblW - Scale(8);
+    int rowInputH = Scale(32);
+
+    // 水印内容行
+    int rowWmY = wmSecY + Scale(32);
     SetWindowPos(g_hLblWmText, NULL, innerX, rowWmY + Scale(5), lblW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_hEditWmText, NULL, innerX + lblW, rowWmY, innerW - lblW, Scale(30), SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_hEditWmText, NULL, inputX, rowWmY, totalInputW, rowInputH, SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int rowTraceY = rowWmY + Scale(38);
+    // 溯源编号行
+    int rowTraceY = rowWmY + rowInputH + Scale(12);
     int genBtnW = Scale(96);
+    int editTraceW = totalInputW - genBtnW - Scale(10);
     SetWindowPos(g_hLblTraceId, NULL, innerX, rowTraceY + Scale(5), lblW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_hEditTraceId, NULL, innerX + lblW, rowTraceY, innerW - lblW - genBtnW - Scale(10), Scale(30), SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_hBtnGenTrace, NULL, innerX + innerW - genBtnW, rowTraceY, genBtnW, Scale(30), SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_hEditTraceId, NULL, inputX, rowTraceY, editTraceW, rowInputH, SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_hBtnGenTrace, NULL, inputX + editTraceW + Scale(10), rowTraceY, genBtnW, rowInputH, SWP_NOZORDER | SWP_NOACTIVATE);
 
-    // 保护部分
-    int protSecY = rowTraceY + Scale(44);
+    // 结构锁定与保护部分
+    int protSecY = rowTraceY + rowInputH + Scale(20);
     SetWindowPos(g_hChkLockStruct, NULL, innerX, protSecY, innerW, Scale(24), SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int protRow2Y = protSecY + Scale(30);
-    int chkSheetW = Scale(380);
-    SetWindowPos(g_hChkProtectSheet, NULL, innerX, protRow2Y, chkSheetW, Scale(24), SWP_NOZORDER | SWP_NOACTIVATE);
+    int protRow2Y = protSecY + Scale(28);
+    SetWindowPos(g_hChkProtectSheet, NULL, innerX, protRow2Y, innerW, Scale(24), SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int pwdLblW = Scale(100);
-    int pwdEditW = Scale(130);
-    int pwdX = innerX + innerW - pwdEditW - pwdLblW;
-    SetWindowPos(g_hLblPassword, NULL, pwdX, protRow2Y + Scale(3), pwdLblW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_hEditPassword, NULL, pwdX + pwdLblW, protRow2Y, pwdEditW, Scale(28), SWP_NOZORDER | SWP_NOACTIVATE);
+    // 密码输入行 (严格对齐到 inputX)
+    int rowPwdY = protRow2Y + Scale(28);
+    int pwdEditW = Scale(240);
+    SetWindowPos(g_hLblPassword, NULL, innerX + Scale(22), rowPwdY + Scale(5), lblW - Scale(22), Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_hEditPassword, NULL, inputX, rowPwdY, pwdEditW, rowInputH, SWP_NOZORDER | SWP_NOACTIVATE);
 
     // 主操作大按钮 1 (加工导出)
     int btnExecH = Scale(46);
@@ -647,6 +656,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
         g_hBrushWinBg = CreateSolidBrush(COLOR_WIN_BG);
         g_hBrushCardBg = CreateSolidBrush(COLOR_CARD_BG);
+        g_hBrushEditBg = CreateSolidBrush(COLOR_EDIT_BG);
 
         // 1. 顶部 Segmented Tab 按钮 (自绘制)
         g_hBtnTab1 = CreateWindowExW(0, L"BUTTON", L"⚡ 加工与加锁",
@@ -657,17 +667,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                                      WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                                      0, 0, 100, 20, hWnd, (HMENU)IDC_TAB_BTN_2, g_hInstance, NULL);
 
-        // 2. 公共：目标文件选择
+        // 2. 公共：目标文件选择 (增加 WS_BORDER 边框)
         g_hLblFile = CreateWindowExW(0, L"STATIC", L"目标 Excel 文件 (支持直接拖拽文件到本窗口):", WS_CHILD | WS_VISIBLE,
                                      0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
 
-        g_hEditFilePath = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        g_hEditFilePath = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
                                           0, 0, 100, 20, hWnd, (HMENU)IDC_EDIT_FILEPATH, g_hInstance, NULL);
 
         g_hBtnBrowse = CreateWindowExW(0, L"BUTTON", L"浏览文件...", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
                                        0, 0, 100, 20, hWnd, (HMENU)IDC_BTN_BROWSE, g_hInstance, NULL);
 
-        // 3. Tab 1【加工】控件
+        // 3. Tab 1【加工】控件 (水印默认：绝密，溯源默认：SEC-{UNIX时间戳})
         g_hChkAddWm = CreateWindowExW(0, L"BUTTON", L"写入 veryHidden 隐性暗水印工作表",
                                       WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                       0, 0, 100, 20, hWnd, (HMENU)IDC_CHK_ADD_WM, g_hInstance, NULL);
@@ -676,15 +686,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         g_hLblWmText = CreateWindowExW(0, L"STATIC", L"水印显示内容:", WS_CHILD | WS_VISIBLE,
                                        0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
 
-        g_hEditWmText = CreateWindowExW(0, L"EDIT", L"绝密外发 · 专供审计使用",
-                                         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        g_hEditWmText = CreateWindowExW(0, L"EDIT", L"绝密",
+                                         WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
                                          0, 0, 100, 20, hWnd, (HMENU)IDC_EDIT_WM_TEXT, g_hInstance, NULL);
 
         g_hLblTraceId = CreateWindowExW(0, L"STATIC", L"防伪溯源编号:", WS_CHILD | WS_VISIBLE,
                                         0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
 
-        g_hEditTraceId = CreateWindowExW(0, L"EDIT", L"SEC-2026-WM888",
-                                          WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        std::wstring defaultTraceId = GenerateTraceId();
+        g_hEditTraceId = CreateWindowExW(0, L"EDIT", defaultTraceId.c_str(),
+                                          WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
                                           0, 0, 100, 20, hWnd, (HMENU)IDC_EDIT_TRACE_ID, g_hInstance, NULL);
 
         g_hBtnGenTrace = CreateWindowExW(0, L"BUTTON", L"随机生成", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -702,7 +713,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         g_hLblPassword = CreateWindowExW(0, L"STATIC", L"保护密码(可选):", WS_CHILD | WS_VISIBLE,
                                          0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
 
-        g_hEditPassword = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_PASSWORD | ES_AUTOHSCROLL,
+        g_hEditPassword = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_PASSWORD | ES_AUTOHSCROLL,
                                            0, 0, 100, 20, hWnd, (HMENU)IDC_EDIT_PASSWORD, g_hInstance, NULL);
 
         g_hBtnExecuteProcess = CreateWindowExW(0, L"BUTTON", L"⚡ 执行加工并导出新 Excel 文件",
@@ -717,14 +728,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         g_hLblSheetsList = CreateWindowExW(0, L"STATIC", L"工作簿所有工作表及隐藏状态:", WS_CHILD,
                                            0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
 
-        g_hListSheets = CreateWindowExW(0, L"LISTBOX", L"", WS_CHILD | WS_VSCROLL | LBS_NOTIFY,
+        g_hListSheets = CreateWindowExW(0, L"LISTBOX", L"", WS_CHILD | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
                                          0, 0, 100, 20, hWnd, (HMENU)IDC_LIST_SHEETS, g_hInstance, NULL);
 
         g_hLblInspectRes = CreateWindowExW(0, L"STATIC", L"暗水印特征解码与安全取证详情:", WS_CHILD,
                                            0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
 
         g_hEditInspectResult = CreateWindowExW(0, L"EDIT", L"尚未扫描，请载入 Excel 文件并点击上方按钮开始解析。",
-                                                WS_CHILD | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+                                                WS_CHILD | WS_BORDER | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
                                                 0, 0, 100, 20, hWnd, (HMENU)IDC_EDIT_INSPECT_RESULT, g_hInstance, NULL);
 
         g_hBtnQuickUnprotect = CreateWindowExW(0, L"BUTTON", L"🔓 一键脱壳解锁 (清除工作簿与工作表全部密码和保护)",
@@ -801,11 +812,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
         // 卡片内部细分线
         if (g_currentTab == 0) {
-            int line1Y = cardY + Scale(76);
+            int line1Y = cardY + Scale(80);
             MoveToEx(hdc, rcCard.left + Scale(20), line1Y, NULL);
             LineTo(hdc, rcCard.right - Scale(20), line1Y);
 
-            int line2Y = line1Y + Scale(116);
+            int line2Y = line1Y + Scale(136);
             MoveToEx(hdc, rcCard.left + Scale(20), line2Y, NULL);
             LineTo(hdc, rcCard.right - Scale(20), line2Y);
         }
@@ -857,9 +868,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     case WM_CTLCOLOREDIT:
     case WM_CTLCOLORLISTBOX: {
         HDC hdcCtl = (HDC)wParam;
-        SetBkColor(hdcCtl, RGB(255, 255, 255));
-        SetTextColor(hdcCtl, COLOR_TEXT_MAIN);
-        return (LRESULT)g_hBrushCardBg;
+        SetBkColor(hdcCtl, COLOR_EDIT_BG);
+        SetTextColor(hdcCtl, COLOR_EDIT_TEXT);
+        return (LRESULT)g_hBrushEditBg;
     }
 
     case WM_DPICHANGED: {
@@ -928,6 +939,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     case WM_DESTROY:
         if (g_hBrushWinBg) DeleteObject(g_hBrushWinBg);
         if (g_hBrushCardBg) DeleteObject(g_hBrushCardBg);
+        if (g_hBrushEditBg) DeleteObject(g_hBrushEditBg);
         if (g_hFontNormal) DeleteObject(g_hFontNormal);
         if (g_hFontBold) DeleteObject(g_hFontBold);
         if (g_hFontTitle) DeleteObject(g_hFontTitle);
