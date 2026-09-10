@@ -306,26 +306,26 @@ bool ExcelToolkitCore::ProcessExcelFile(
                                 
                                 bool isSelfClosing = (stXml[firstClose - 1] == '/');
                                 
-                                if (isSelfClosing) {
-                                    std::string xfBody = stXml.substr(cur, firstClose + 1 - cur);
-                                    if (xfBody.find("applyProtection") == std::string::npos) {
-                                        xfBody.insert(3, " applyProtection=\"1\"");
-                                    }
-                                    size_t sl = xfBody.rfind("/>");
-                                    if (sl != std::string::npos) {
-                                        xfBody.replace(sl, 2, "><protection locked=\"0\" hidden=\"0\"/></xf>");
-                                        stXml.replace(cur, firstClose + 1 - cur, xfBody);
-                                        xfsEnd = stXml.find("</cellXfs>", cur);
-                                    }
-                                    cur += xfBody.length();
+                                std::string openTag = stXml.substr(cur, firstClose + 1 - cur);
+                                size_t apPos = openTag.find("applyProtection=\"");
+                                if (apPos != std::string::npos) {
+                                    if (openTag[apPos + 17] == '0') openTag[apPos + 17] = '1';
                                 } else {
-                                    std::string openTag = stXml.substr(cur, firstClose + 1 - cur);
-                                    if (openTag.find("applyProtection") == std::string::npos) {
-                                        openTag.insert(3, " applyProtection=\"1\"");
-                                        stXml.replace(cur, firstClose + 1 - cur, openTag);
-                                        xfsEnd = stXml.find("</cellXfs>", cur);
-                                        firstClose = cur + openTag.length() - 1;
+                                    openTag.insert(3, " applyProtection=\"1\"");
+                                }
+                                
+                                if (isSelfClosing) {
+                                    size_t sl = openTag.rfind("/>");
+                                    if (sl != std::string::npos) {
+                                        openTag.replace(sl, 2, "><protection locked=\"0\" hidden=\"0\"/></xf>");
                                     }
+                                    stXml.replace(cur, firstClose + 1 - cur, openTag);
+                                    xfsEnd = stXml.find("</cellXfs>", cur);
+                                    cur += openTag.length();
+                                } else {
+                                    stXml.replace(cur, firstClose + 1 - cur, openTag);
+                                    xfsEnd = stXml.find("</cellXfs>", cur);
+                                    firstClose = cur + openTag.length() - 1;
                                     
                                     size_t endTag = stXml.find("</xf>", firstClose);
                                     if (endTag == std::string::npos) break;
@@ -338,7 +338,18 @@ bool ExcelToolkitCore::ProcessExcelFile(
                                             xfsEnd = stXml.find("</cellXfs>", cur);
                                         }
                                     } else {
-                                        stXml.insert(endTag, "<protection locked=\"0\" hidden=\"0\"/>");
+                                        size_t alignPos = stXml.find("<alignment", firstClose);
+                                        size_t insPos = firstClose + 1;
+                                        if (alignPos != std::string::npos && alignPos < endTag) {
+                                            size_t alignEnd = stXml.find("</alignment>", alignPos);
+                                            size_t alignSelfClose = stXml.find("/>", alignPos);
+                                            if (alignEnd != std::string::npos && alignEnd < endTag) {
+                                                insPos = alignEnd + 12;
+                                            } else if (alignSelfClose != std::string::npos && alignSelfClose < endTag) {
+                                                insPos = alignSelfClose + 2;
+                                            }
+                                        }
+                                        stXml.insert(insPos, "<protection locked=\"0\" hidden=\"0\"/>");
                                         xfsEnd = stXml.find("</cellXfs>", cur);
                                     }
                                     cur = stXml.find("</xf>", firstClose) + 5;
@@ -373,19 +384,29 @@ bool ExcelToolkitCore::ProcessExcelFile(
                             }
                         }
                         size_t insPos = sXml.find("</worksheet>");
+                        if (insPos == std::string::npos) insPos = sXml.length();
                         const char* afterTags[] = {
-                            "<protectedRanges", "<scenarios", "<autoFilter", "<sortState", "<dataConsolidate",
-                            "<customSheetViews", "<mergeCells", "<phoneticPr", "<conditionalFormatting",
-                            "<dataValidations", "<hyperlinks", "<printOptions", "<pageMargins", "<pageSetup",
-                            "<headerFooter", "<rowBreaks", "<colBreaks", "<customProperties", "<cellWatches",
-                            "<ignoredErrors", "<smartTags", "<drawing", "<legacyDrawing", "<legacyDrawingHF",
-                            "<legacyDrawingMacro", "<picture", "<oleObjects", "<controls", "<webPublishItems",
-                            "<tableParts", "<extLst"
+                            "protectedRanges", "scenarios", "autoFilter", "sortState", "dataConsolidate",
+                            "customSheetViews", "mergeCells", "phoneticPr", "conditionalFormatting",
+                            "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup",
+                            "headerFooter", "rowBreaks", "colBreaks", "customProperties", "cellWatches",
+                            "ignoredErrors", "smartTags", "drawing", "legacyDrawing", "legacyDrawingHF",
+                            "legacyDrawingMacro", "picture", "oleObjects", "controls", "webPublishItems",
+                            "tableParts", "extLst"
                         };
                         for (const char* tag : afterTags) {
-                            size_t pos = sXml.find(tag);
-                            if (pos != std::string::npos && pos < insPos) {
-                                insPos = pos;
+                            std::string tagStr1 = std::string("<") + tag;
+                            std::string tagStr2 = std::string(":") + tag;
+                            
+                            size_t pos1 = sXml.find(tagStr1);
+                            if (pos1 != std::string::npos && pos1 < insPos) insPos = pos1;
+                            
+                            size_t pos2 = sXml.find(tagStr2);
+                            if (pos2 != std::string::npos) {
+                                size_t openBracket = sXml.rfind("<", pos2);
+                                if (openBracket != std::string::npos && openBracket < insPos) {
+                                    insPos = openBracket;
+                                }
                             }
                         }
                         if (insPos != std::string::npos) {

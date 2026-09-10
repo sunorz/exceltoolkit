@@ -1106,14 +1106,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         int wmId = LOWORD(wParam);
         switch (wmId) {
         case IDC_TAB_BTN_1:
-            g_currentTab = 0;
-            UpdateTabVisibility();
+            if (g_currentTab != 0) {
+                g_currentTab = 0;
+                g_selectedFilePath = L"";
+                if (g_hEditFilePath) SetWindowTextW(g_hEditFilePath, L"");
+                SetWindowTextW(g_hStaticStatus, L"");
+                UpdateTabVisibility();
+            }
             break;
         case IDC_TAB_BTN_2:
-            g_currentTab = 1;
-            UpdateTabVisibility();
-            if (!g_selectedFilePath.empty()) {
-                OnExecuteInspect();
+            if (g_currentTab != 1) {
+                g_currentTab = 1;
+                g_selectedFilePath = L"";
+                if (g_hEditFilePath) SetWindowTextW(g_hEditFilePath, L"");
+                SetWindowTextW(g_hStaticStatus, L"");
+                UpdateTabVisibility();
             }
             break;
         case IDC_BTN_BROWSE:
