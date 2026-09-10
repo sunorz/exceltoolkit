@@ -131,7 +131,6 @@ std::string ExcelToolkitCore::GenerateRandomHex8() {
 std::string ExcelToolkitCore::GetIsoTimestampNow() {
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
-    // 强制转换为中国标准时间 CST (UTC+8)
     std::time_t cst_time = in_time_t + 8 * 3600;
     std::tm* gmt = std::gmtime(&cst_time);
     char buf[64] = { 0 };
@@ -306,15 +305,19 @@ bool ExcelToolkitCore::ProcessExcelFile(
                 } else {
                     wbProt = "<workbookProtection lockStructure=\"1\" lockWindows=\"0\"/>";
                 }
-                size_t insertPos = wbXml.find("</workbook>");
+                
+                // 修复：严格遵循 OpenXML 规范，<workbookProtection> 必须置于 <sheets> 节点之前
+                size_t insertPos = wbXml.find("<sheets>");
                 if (insertPos != std::string::npos) {
-                    wbXml.insert(insertPos, wbProt);
+                    wbXml.insert(insertPos, wbProt + "\n  ");
+                } else {
+                    size_t endPos = wbXml.find("</workbook>");
+                    if (endPos != std::string::npos) wbXml.insert(endPos, wbProt);
                 }
             }
 
 
             if (options.unlockAllCells) {
-                // 1. 解除所有单元格在 styles.xml 中的锁定限制，使单元格完全允许正常修改内容
                 if (pkg.files.find("xl/styles.xml") != pkg.files.end()) {
                     std::string& stXml = pkg.files["xl/styles.xml"];
                     size_t xfsPos = stXml.find("<cellXfs");
@@ -385,7 +388,6 @@ bool ExcelToolkitCore::ProcessExcelFile(
             }
 
             if (options.protectSheetContent) {
-                // 2. 构造保护标签：objects="1" 锁定实体水印防止被选中或删除；sheet="1" 开启保护，表内所有单元格因已设为locked=0完全放开自由编辑
                 uint16_t pwHash = ComputeExcelPasswordHash(options.password);
                 std::stringstream hexHash;
                 hexHash << std::hex << std::uppercase << std::setw(4) << std::setfill('0') << pwHash;
@@ -409,8 +411,8 @@ bool ExcelToolkitCore::ProcessExcelFile(
                                 sXml.erase(spPos, spEnd + 2 - spPos);
                             }
                         }
-                        size_t insPos = sXml.find("</worksheet>");
-                        if (insPos == std::string::npos) insPos = sXml.length();
+                        
+                        size_t insPos = std::string::npos;
                         const char* afterTags[] = {
                             "protectedRanges", "scenarios", "autoFilter", "sortState", "dataConsolidate",
                             "customSheetViews", "mergeCells", "phoneticPr", "conditionalFormatting",
@@ -435,6 +437,17 @@ bool ExcelToolkitCore::ProcessExcelFile(
                                 }
                             }
                         }
+
+                        // 修复：若没有匹配到任何后续标签，插入位置必须紧跟在 </sheetData> 后面，不能随意放至文档末尾
+                        if (insPos == std::string::npos) {
+                            size_t sdEnd = sXml.find("</sheetData>");
+                            if (sdEnd != std::string::npos) {
+                                insPos = sdEnd + 12;
+                            } else {
+                                insPos = sXml.find("</worksheet>");
+                            }
+                        }
+
                         if (insPos != std::string::npos) {
                             sXml.insert(insPos, protTag);
                         }
@@ -443,10 +456,8 @@ bool ExcelToolkitCore::ProcessExcelFile(
             }
 
             if (options.addVisibleWatermark) {
-                // 3. 生成并平铺实体可见水印（覆盖全表含空白无内容区域，且随工作表打印 100% 可见）
                 std::string entityWm = options.visibleWatermarkText.empty() ? "内部资料 严禁外传" : options.visibleWatermarkText;
                 
-                // 找出当前已有最大的 drawing 编号
                 int maxDrawingId = 0;
                 for (const auto& kv : pkg.files) {
                     if (kv.first.rfind("xl/drawings/drawing", 0) == 0) {
@@ -461,18 +472,15 @@ bool ExcelToolkitCore::ProcessExcelFile(
                     }
                 }
 
-                // 对每一个工作表注入平铺实体水印
                 for (auto& kv : pkg.files) {
                     if (kv.first.rfind("xl/worksheets/sheet", 0) == 0 && kv.first.find(".xml") != std::string::npos) {
                         if (kv.first.find("sheet_sysdata_cfg") != std::string::npos) continue;
-                        std::string sheetPath = kv.first; // e.g. xl/worksheets/sheet1.xml
+                        std::string sheetPath = kv.first;
                         std::string& sXml = kv.second;
 
-                        // 提取 sheet 文件名，例如 sheet1.xml
                         size_t lastSlash = sheetPath.find_last_of('/');
                         std::string sheetFileName = sheetPath.substr(lastSlash + 1);
 
-                        // 检查是否已有 drawing
                         size_t dPos = sXml.find("<drawing r:id=\"");
                         std::string drawRelId = "";
                         if (dPos != std::string::npos) {
@@ -494,7 +502,6 @@ bool ExcelToolkitCore::ProcessExcelFile(
                                     size_t tEnd = sRels.find("\"", tPos + 8);
                                     if (tEnd != std::string::npos) {
                                         std::string target = sRels.substr(tPos + 8, tEnd - (tPos + 8));
-                                        // target might be "../drawings/drawing1.xml"
                                         size_t numStart = target.find("drawing");
                                         if (numStart != std::string::npos) {
                                             numStart += 7;
@@ -563,10 +570,11 @@ bool ExcelToolkitCore::ProcessExcelFile(
                         if (wsDrEnd != std::string::npos) {
                             int shapeId = 990000 + drawingId; 
                             std::stringstream ssShape;
-                            ssShape << "  <xdr:twoCellAnchor editAs=\"absolute\">\n"
+                            // 修复：移除DrawingML中非法的空属性宏及标签，提高Microsoft 365兼容性
+                            ssShape << "  <xdr:twoCellAnchor>\n"
                                     << "    <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>\n"
                                     << "    <xdr:to><xdr:col>100</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>100</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>\n"
-                                    << "    <xdr:sp macro=\"\" textlink=\"\">\n"
+                                    << "    <xdr:sp>\n"
                                     << "      <xdr:nvSpPr>\n"
                                     << "        <xdr:cNvPr id=\"" << shapeId << "\" name=\"VisibleWatermark_" << shapeId << "\"/>\n"
                                     << "        <xdr:cNvSpPr>\n"
@@ -574,28 +582,20 @@ bool ExcelToolkitCore::ProcessExcelFile(
                                     << "        </xdr:cNvSpPr>\n"
                                     << "      </xdr:nvSpPr>\n"
                                     << "      <xdr:spPr>\n"
-                                    << "        <a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"9000000\" cy=\"9000000\"/></a:xfrm>\n"
                                     << "        <a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>\n"
                                     << "        <a:solidFill><a:srgbClr val=\"FFFFFF\"><a:alpha val=\"0\"/></a:srgbClr></a:solidFill>\n"
                                     << "        <a:ln><a:noFill/></a:ln>\n"
                                     << "      </xdr:spPr>\n"
-                                    << "      <xdr:style>\n"
-                                    << "        <a:lnRef idx=\"0\"><a:schemeClr val=\"accent1\"/></a:lnRef>\n"
-                                    << "        <a:fillRef idx=\"0\"><a:schemeClr val=\"accent1\"/></a:fillRef>\n"
-                                    << "        <a:effectRef idx=\"0\"><a:schemeClr val=\"accent1\"/></a:effectRef>\n"
-                                    << "        <a:fontRef idx=\"minor\"><a:schemeClr val=\"tx1\"/></a:fontRef>\n"
-                                    << "      </xdr:style>\n"
                                     << "      <xdr:txBody>\n"
                                     << "        <a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" rtlCol=\"0\" anchor=\"ctr\"/>\n"
                                     << "        <a:lstStyle/>\n"
                                     << "        <a:p>\n"
                                     << "          <a:pPr algn=\"ctr\"/>\n"
                                     << "          <a:r>\n"
-                                    << "            <a:rPr lang=\"zh-CN\" sz=\"4800\" b=\"1\" i=\"0\" u=\"none\" strike=\"noStrike\" baseline=\"0\">\n"
+                                    << "            <a:rPr lang=\"zh-CN\" sz=\"4800\" b=\"1\">\n"
                                     << "              <a:solidFill><a:srgbClr val=\"000000\"><a:alpha val=\"15000\"/></a:srgbClr></a:solidFill>\n"
                                     << "              <a:latin typeface=\"Microsoft YaHei\"/>\n"
                                     << "              <a:ea typeface=\"Microsoft YaHei\"/>\n"
-                                    << "              <a:cs typeface=\"Microsoft YaHei\"/>\n"
                                     << "            </a:rPr>\n"
                                     << "            <a:t>" << EscapeXml(entityWm) << "</a:t>\n"
                                     << "          </a:r>\n"
@@ -618,133 +618,128 @@ bool ExcelToolkitCore::ProcessExcelFile(
                 }
             }
 
-                if (options.addWatermark) {
-            std::string effectiveSheetName = options.sheetName.empty() ? HIDDEN_SHEET_NAME_CONST : options.sheetName;
-            std::string effectiveWmText = options.watermarkText.empty() ? "绝密外发审计凭证" : options.watermarkText;
-            
-            // 溯源码格式：{签发人}-{UNIX时间戳}
-            std::string effectiveIssuer = options.issuer.empty() ? "ADMIN" : options.issuer;
-            std::string effectiveTraceId = options.traceId;
-            if (effectiveTraceId.empty()) {
-                auto nowSec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                effectiveTraceId = effectiveIssuer + "-" + std::to_string(nowSec);
-            }
-            std::string nowIso = GetIsoTimestampNow();
-
-            std::string targetSheetFile = "worksheets/sheet_sysdata_cfg.xml";
-            std::string targetSheetRelId = "rIdSysDataCfg";
-            int targetSheetId = 9988;
-
-            size_t oldSheetPos = wbXml.find("name=\"" + effectiveSheetName + "\"");
-            if (oldSheetPos != std::string::npos) {
-                size_t tagStart = wbXml.rfind("<sheet", oldSheetPos);
-                size_t tagEnd = wbXml.find("/>", oldSheetPos);
-                if (tagEnd == std::string::npos) tagEnd = wbXml.find("</sheet>", oldSheetPos) + 8;
-                else tagEnd += 2;
-                if (tagStart != std::string::npos && tagEnd != std::string::npos) {
-                    wbXml.erase(tagStart, tagEnd - tagStart);
+            if (options.addWatermark) {
+                std::string effectiveSheetName = options.sheetName.empty() ? HIDDEN_SHEET_NAME_CONST : options.sheetName;
+                std::string effectiveWmText = options.watermarkText.empty() ? "绝密外发审计凭证" : options.watermarkText;
+                
+                std::string effectiveIssuer = options.issuer.empty() ? "ADMIN" : options.issuer;
+                std::string effectiveTraceId = options.traceId;
+                if (effectiveTraceId.empty()) {
+                    auto nowSec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                    effectiveTraceId = effectiveIssuer + "-" + std::to_string(nowSec);
                 }
-            }
+                std::string nowIso = GetIsoTimestampNow();
 
-            std::stringstream ssSheet;
-            ssSheet << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
-                    << "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\n"
-                    << "  <dimension ref=\"A1:B3\"/>\n"
-                    << "  <sheetViews><sheetView tabSelected=\"0\" workbookViewId=\"0\"/></sheetViews>\n"
-                    << "  <sheetData>\n"
-                    << "    <row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>溯源编号</t></is></c><c r=\"B1\" t=\"inlineStr\"><is><t>" << effectiveTraceId << "</t></is></c></row>\n"
-                    << "    <row r=\"2\"><c r=\"A2\" t=\"inlineStr\"><is><t>水印文字</t></is></c><c r=\"B2\" t=\"inlineStr\"><is><t>" << effectiveWmText << "</t></is></c></row>\n"
-                    << "    <row r=\"3\"><c r=\"A3\" t=\"inlineStr\"><is><t>生成时间</t></is></c><c r=\"B3\" t=\"inlineStr\"><is><t>" << nowIso << "</t></is></c></row>\n"
-                    << "  </sheetData>\n"
-                    << "</worksheet>";
+                std::string targetSheetFile = "worksheets/sheet_sysdata_cfg.xml";
+                std::string targetSheetRelId = "rIdSysDataCfg";
+                int targetSheetId = 9988;
 
-            pkg.files["xl/" + targetSheetFile] = ssSheet.str();
-
-            std::string sheetTag = "<sheet name=\"" + effectiveSheetName + "\" sheetId=\"" + std::to_string(targetSheetId) + "\" state=\"veryHidden\" r:id=\"" + targetSheetRelId + "\"/>";
-            size_t sheetsEnd = wbXml.find("</sheets>");
-            if (sheetsEnd != std::string::npos) {
-                wbXml.insert(sheetsEnd, "  " + sheetTag + "\n");
-            } else {
-                wbXml = "<workbook><sheets>" + sheetTag + "</sheets></workbook>";
-            }
-
-            if (relsXml.find("Id=\"" + targetSheetRelId + "\"") == std::string::npos) {
-                std::string relTag = "<Relationship Id=\"" + targetSheetRelId + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"" + targetSheetFile + "\"/>";
-                size_t relsEnd = relsXml.find("</Relationships>");
-                if (relsEnd != std::string::npos) {
-                    relsXml.insert(relsEnd, "  " + relTag + "\n");
-                }
-            }
-
-            if (ctXml.find("/xl/" + targetSheetFile) == std::string::npos) {
-                std::string ctTag = "<Override PartName=\"/xl/" + targetSheetFile + "\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>";
-                size_t ctEnd = ctXml.find("</Types>");
-                if (ctEnd != std::string::npos) {
-                    ctXml.insert(ctEnd, "  " + ctTag + "\n");
-                }
-            }
-
-            // 同步更新 docProps/app.xml 的 HeadingPairs / TitlesOfParts。
-            // Excel 在打开文件时会用这两处的工作表计数/名称列表与 workbook.xml 里
-            // 实际的 <sheets> 列表做一致性校验（隐藏/veryHidden 表也算在内）。
-            // 新增了隐藏水印表却不同步这里，数量和名称对不上，是导致 Office
-            // 判定文件"内容有问题"、弹出修复提示甚至直接拒绝打开的常见原因。
-            if (pkg.files.find("docProps/app.xml") != pkg.files.end()) {
-                std::string& appXml = pkg.files["docProps/app.xml"];
-
-                std::vector<std::string> sheetNames;
-                size_t searchPos = 0;
-                while (true) {
-                    size_t sheetTagPos = wbXml.find("<sheet ", searchPos);
-                    if (sheetTagPos == std::string::npos) break;
-                    size_t tagClose = wbXml.find("/>", sheetTagPos);
-                    if (tagClose == std::string::npos) break;
-                    std::string tagContent = wbXml.substr(sheetTagPos, tagClose - sheetTagPos);
-                    size_t namePos = tagContent.find("name=\"");
-                    if (namePos != std::string::npos) {
-                        size_t nameStart = namePos + 6;
-                        size_t nameEnd = tagContent.find("\"", nameStart);
-                        if (nameEnd != std::string::npos) {
-                            sheetNames.push_back(tagContent.substr(nameStart, nameEnd - nameStart));
-                        }
+                size_t oldSheetPos = wbXml.find("name=\"" + effectiveSheetName + "\"");
+                if (oldSheetPos != std::string::npos) {
+                    size_t tagStart = wbXml.rfind("<sheet", oldSheetPos);
+                    size_t tagEnd = wbXml.find("/>", oldSheetPos);
+                    if (tagEnd == std::string::npos) tagEnd = wbXml.find("</sheet>", oldSheetPos) + 8;
+                    else tagEnd += 2;
+                    if (tagStart != std::string::npos && tagEnd != std::string::npos) {
+                        wbXml.erase(tagStart, tagEnd - tagStart);
                     }
-                    searchPos = tagClose + 2;
                 }
 
-                if (!sheetNames.empty()) {
-                    std::stringstream ssTitles;
-                    for (const auto& nm : sheetNames) {
-                        ssTitles << "<vt:lpstr>" << EscapeXml(nm) << "</vt:lpstr>";
-                    }
-                    std::string newTitlesVector = "<vt:vector size=\"" + std::to_string(sheetNames.size())
-                        + "\" baseType=\"lpstr\">" + ssTitles.str() + "</vt:vector>";
+                std::stringstream ssSheet;
+                ssSheet << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+                        << "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\n"
+                        << "  <dimension ref=\"A1:B3\"/>\n"
+                        << "  <sheetViews><sheetView tabSelected=\"0\" workbookViewId=\"0\"/></sheetViews>\n"
+                        << "  <sheetData>\n"
+                        << "    <row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>溯源编号</t></is></c><c r=\"B1\" t=\"inlineStr\"><is><t>" << effectiveTraceId << "</t></is></c></row>\n"
+                        << "    <row r=\"2\"><c r=\"A2\" t=\"inlineStr\"><is><t>水印文字</t></is></c><c r=\"B2\" t=\"inlineStr\"><is><t>" << effectiveWmText << "</t></is></c></row>\n"
+                        << "    <row r=\"3\"><c r=\"A3\" t=\"inlineStr\"><is><t>生成时间</t></is></c><c r=\"B3\" t=\"inlineStr\"><is><t>" << nowIso << "</t></is></c></row>\n"
+                        << "  </sheetData>\n"
+                        << "</worksheet>";
 
-                    size_t topPos = appXml.find("<TitlesOfParts>");
-                    if (topPos != std::string::npos) {
-                        size_t topEnd = appXml.find("</TitlesOfParts>");
-                        if (topEnd != std::string::npos) {
-                            size_t vecStart = appXml.find("<vt:vector", topPos);
-                            if (vecStart != std::string::npos && vecStart < topEnd) {
-                                appXml.replace(vecStart, topEnd - vecStart, newTitlesVector);
+                pkg.files["xl/" + targetSheetFile] = ssSheet.str();
+
+                std::string sheetTag = "<sheet name=\"" + effectiveSheetName + "\" sheetId=\"" + std::to_string(targetSheetId) + "\" state=\"veryHidden\" r:id=\"" + targetSheetRelId + "\"/>";
+                size_t sheetsEnd = wbXml.find("</sheets>");
+                if (sheetsEnd != std::string::npos) {
+                    wbXml.insert(sheetsEnd, "  " + sheetTag + "\n");
+                } else {
+                    wbXml = "<workbook><sheets>" + sheetTag + "</sheets></workbook>";
+                }
+
+                if (relsXml.find("Id=\"" + targetSheetRelId + "\"") == std::string::npos) {
+                    std::string relTag = "<Relationship Id=\"" + targetSheetRelId + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"" + targetSheetFile + "\"/>";
+                    size_t relsEnd = relsXml.find("</Relationships>");
+                    if (relsEnd != std::string::npos) {
+                        relsXml.insert(relsEnd, "  " + relTag + "\n");
+                    }
+                }
+
+                if (ctXml.find("/xl/" + targetSheetFile) == std::string::npos) {
+                    std::string ctTag = "<Override PartName=\"/xl/" + targetSheetFile + "\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>";
+                    size_t ctEnd = ctXml.find("</Types>");
+                    if (ctEnd != std::string::npos) {
+                        ctXml.insert(ctEnd, "  " + ctTag + "\n");
+                    }
+                }
+
+                if (pkg.files.find("docProps/app.xml") != pkg.files.end()) {
+                    std::string& appXml = pkg.files["docProps/app.xml"];
+
+                    std::vector<std::string> sheetNames;
+                    size_t searchPos = 0;
+                    while (true) {
+                        size_t sheetTagPos = wbXml.find("<sheet ", searchPos);
+                        if (sheetTagPos == std::string::npos) break;
+                        size_t tagClose = wbXml.find("/>", sheetTagPos);
+                        if (tagClose == std::string::npos) break;
+                        std::string tagContent = wbXml.substr(sheetTagPos, tagClose - sheetTagPos);
+                        size_t namePos = tagContent.find("name=\"");
+                        if (namePos != std::string::npos) {
+                            size_t nameStart = namePos + 6;
+                            size_t nameEnd = tagContent.find("\"", nameStart);
+                            if (nameEnd != std::string::npos) {
+                                sheetNames.push_back(tagContent.substr(nameStart, nameEnd - nameStart));
                             }
                         }
-                    } else {
-                        size_t propEnd = appXml.find("</Properties>");
-                        if (propEnd != std::string::npos) {
-                            appXml.insert(propEnd, "<TitlesOfParts>" + newTitlesVector + "</TitlesOfParts>");
-                        }
+                        searchPos = tagClose + 2;
                     }
 
-                    size_t hpPos = appXml.find("<HeadingPairs>");
-                    if (hpPos != std::string::npos) {
-                        size_t hpEnd = appXml.find("</HeadingPairs>");
-                        if (hpEnd != std::string::npos) {
-                            size_t i4Pos = appXml.find("<vt:i4>", hpPos);
-                            if (i4Pos != std::string::npos && i4Pos < hpEnd) {
-                                size_t i4End = appXml.find("</vt:i4>", i4Pos);
-                                if (i4End != std::string::npos) {
-                                    std::string newI4 = "<vt:i4>" + std::to_string(sheetNames.size()) + "</vt:i4>";
-                                    appXml.replace(i4Pos, i4End + 8 - i4Pos, newI4);
+                    if (!sheetNames.empty()) {
+                        std::stringstream ssTitles;
+                        for (const auto& nm : sheetNames) {
+                            ssTitles << "<vt:lpstr>" << EscapeXml(nm) << "</vt:lpstr>";
+                        }
+                        std::string newTitlesVector = "<vt:vector size=\"" + std::to_string(sheetNames.size())
+                            + "\" baseType=\"lpstr\">" + ssTitles.str() + "</vt:vector>";
+
+                        size_t topPos = appXml.find("<TitlesOfParts>");
+                        if (topPos != std::string::npos) {
+                            size_t topEnd = appXml.find("</TitlesOfParts>");
+                            if (topEnd != std::string::npos) {
+                                size_t vecStart = appXml.find("<vt:vector", topPos);
+                                if (vecStart != std::string::npos && vecStart < topEnd) {
+                                    appXml.replace(vecStart, topEnd - vecStart, newTitlesVector);
+                                }
+                            }
+                        } else {
+                            size_t propEnd = appXml.find("</Properties>");
+                            if (propEnd != std::string::npos) {
+                                appXml.insert(propEnd, "<TitlesOfParts>" + newTitlesVector + "</TitlesOfParts>");
+                            }
+                        }
+
+                        size_t hpPos = appXml.find("<HeadingPairs>");
+                        if (hpPos != std::string::npos) {
+                            size_t hpEnd = appXml.find("</HeadingPairs>");
+                            if (hpEnd != std::string::npos) {
+                                size_t i4Pos = appXml.find("<vt:i4>", hpPos);
+                                if (i4Pos != std::string::npos && i4Pos < hpEnd) {
+                                    size_t i4End = appXml.find("</vt:i4>", i4Pos);
+                                    if (i4End != std::string::npos) {
+                                        std::string newI4 = "<vt:i4>" + std::to_string(sheetNames.size()) + "</vt:i4>";
+                                        appXml.replace(i4Pos, i4End + 8 - i4Pos, newI4);
+                                    }
                                 }
                             }
                         }
@@ -755,7 +750,7 @@ bool ExcelToolkitCore::ProcessExcelFile(
 
         std::string finalOutput = outputPath.empty() ? inputPath : outputPath;
         return pkg.SaveToFile(finalOutput, outError);
-    } } catch (const std::exception& e) {
+    } catch (const std::exception& e) {
         outError = std::string("处理异常: ") + e.what();
         return false;
     } catch (...) {
@@ -812,7 +807,6 @@ bool ExcelToolkitCore::InspectWatermarkFile(
             rPos = rEnd;
         }
 
-        // 解析共享字符池 (xl/sharedStrings.xml)
         std::vector<std::string> sharedStrings;
         if (pkg.files.find("xl/sharedStrings.xml") != pkg.files.end()) {
             const std::string& ssXml = pkg.files["xl/sharedStrings.xml"];
@@ -955,7 +949,6 @@ bool ExcelToolkitCore::InspectWatermarkFile(
                 }
             }
 
-            // Handle raw numeric values inside <v> directly
             size_t vPos = cContent.find("<v>");
             if (vPos != std::string::npos) {
                 size_t vEnd = cContent.find("</v>", vPos);
@@ -1018,7 +1011,6 @@ bool ExcelToolkitCore::InspectWatermarkFile(
             }
         }
 
-        // 全盘检索：若 traceId 仍未抓取到，从 sharedStrings 及所有工作表 XML 中检索 SEC- 溯源码
         if (outInfo.traceId.empty()) {
             for (const auto& kv : pkg.files) {
                 if (kv.first.find("xl/worksheets/") != std::string::npos ||
