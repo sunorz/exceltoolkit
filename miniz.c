@@ -7,6 +7,32 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+/* Compute a valid MS-DOS date/time pair for the current local time.
+ * ZIP requires: date bits15-9=year-1980 (1-127), bits8-5=month(1-12), bits4-0=day(1-31)
+ *               time bits15-11=hour, bits10-5=minute, bits4-0=second/2
+ * A value of 0 for month or day is illegal and causes strict readers
+ * (including Microsoft Office's OPC parser) to reject the archive. */
+static void mz_get_dos_datetime(uint16_t *out_time, uint16_t *out_date) {
+    time_t now = time(NULL);
+    struct tm tmv;
+#if defined(_WIN32)
+    localtime_s(&tmv, &now);
+#else
+    localtime_r(&now, &tmv);
+#endif
+    int year = tmv.tm_year + 1900;
+    if (year < 1980) year = 1980;      /* DOS date cannot represent < 1980 */
+    if (year > 2107) year = 2107;      /* DOS date max representable year */
+
+    *out_date = (uint16_t)(((year - 1980) << 9) |
+                            ((tmv.tm_mon + 1) << 5) |  /* tm_mon is 0-11 -> DOS wants 1-12 */
+                            (tmv.tm_mday));            /* tm_mday is already 1-31 */
+    *out_time = (uint16_t)((tmv.tm_hour << 11) |
+                            (tmv.tm_min << 5) |
+                            (tmv.tm_sec / 2));
+}
 
 void mz_free(void *p) {
     if (p) free(p);
@@ -469,6 +495,9 @@ int mz_zip_writer_finalize_heap_archive(mz_zip_archive *pZip, void **ppBuf, size
     uint8_t *out = (uint8_t*)malloc(total_size);
     if (!out) return 0;
 
+    uint16_t dos_time, dos_date;
+    mz_get_dos_datetime(&dos_time, &dos_date);
+
     size_t cur = 0;
     for (size_t i = 0; i < state->count; i++) {
         writer_entry *e = &state->entries[i];
@@ -479,8 +508,8 @@ int mz_zip_writer_finalize_heap_archive(mz_zip_archive *pZip, void **ppBuf, size
         out[cur + 4] = 20; out[cur + 5] = 0;
         out[cur + 6] = 0x00; out[cur + 7] = 0x08; // UTF-8 flag
         out[cur + 8] = 0; out[cur + 9] = 0;       // STORE
-        out[cur + 10] = 0; out[cur + 11] = 0;
-        out[cur + 12] = 0; out[cur + 13] = 0;
+        out[cur + 10] = (uint8_t)(dos_time); out[cur + 11] = (uint8_t)(dos_time >> 8);
+        out[cur + 12] = (uint8_t)(dos_date); out[cur + 13] = (uint8_t)(dos_date >> 8);
         out[cur + 14] = (uint8_t)(e->crc); out[cur + 15] = (uint8_t)(e->crc >> 8);
         out[cur + 16] = (uint8_t)(e->crc >> 16); out[cur + 17] = (uint8_t)(e->crc >> 24);
         out[cur + 18] = (uint8_t)(e->size); out[cur + 19] = (uint8_t)(e->size >> 8);
@@ -507,8 +536,8 @@ int mz_zip_writer_finalize_heap_archive(mz_zip_archive *pZip, void **ppBuf, size
         out[cd_cur + 6] = 20; out[cd_cur + 7] = 0;
         out[cd_cur + 8] = 0x00; out[cd_cur + 9] = 0x08; // UTF-8
         out[cd_cur + 10] = 0; out[cd_cur + 11] = 0;     // STORE
-        out[cd_cur + 12] = 0; out[cd_cur + 13] = 0;
-        out[cd_cur + 14] = 0; out[cd_cur + 15] = 0;
+        out[cd_cur + 12] = (uint8_t)(dos_time); out[cd_cur + 13] = (uint8_t)(dos_time >> 8);
+        out[cd_cur + 14] = (uint8_t)(dos_date); out[cd_cur + 15] = (uint8_t)(dos_date >> 8);
         out[cd_cur + 16] = (uint8_t)(e->crc); out[cd_cur + 17] = (uint8_t)(e->crc >> 8);
         out[cd_cur + 18] = (uint8_t)(e->crc >> 16); out[cd_cur + 19] = (uint8_t)(e->crc >> 24);
         out[cd_cur + 20] = (uint8_t)(e->size); out[cd_cur + 21] = (uint8_t)(e->size >> 8);
