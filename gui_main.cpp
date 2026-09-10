@@ -50,11 +50,11 @@
 
 // Tab 1 (加工)
 #define IDC_CHK_ADD_WM           1005
-#define IDC_EDIT_WM_TEXT         1006
-#define IDC_EDIT_TRACE_ID        1007
-#define IDC_BTN_GEN_TRACE        1008
-#define IDC_CHK_LOCK_STRUCT      1009
-#define IDC_CHK_PROTECT_SHEET    1010
+#define IDC_EDIT_ISSUER          1006
+#define IDC_EDIT_WM_TEXT         1007
+#define IDC_CHK_LOCK_STRUCT      1008
+#define IDC_CHK_PROTECT_SHEET    1009
+#define IDC_EDIT_ENTITY_WM       1010
 #define IDC_EDIT_PASSWORD        1011
 #define IDC_BTN_EXECUTE_PROCESS  1012
 
@@ -109,30 +109,44 @@ HWND g_hLblFile = NULL;
 HWND g_hEditFilePath = NULL;
 HWND g_hBtnBrowse = NULL;
 
-// Tab 1【加工】控件 (水印默认：绝密，防伪溯源码后台自动基于选文件时间戳生成，无需界面占位)
+// Tab 1【加工】控件
 HWND g_hChkAddWm = NULL;
+HWND g_hLblIssuer = NULL;
+HWND g_hEditIssuer = NULL;
 HWND g_hLblWmText = NULL;
 HWND g_hEditWmText = NULL;
 
 HWND g_hChkLockStruct = NULL;
 HWND g_hChkProtectSheet = NULL;
+HWND g_hLblEntityWm = NULL;
+HWND g_hEditEntityWm = NULL;
 HWND g_hLblPassword = NULL;
 HWND g_hEditPassword = NULL;
 HWND g_hBtnExecuteProcess = NULL;
 
 // 输入框外框矩形 (用于优雅绘制底纹与 1px 细边框，使内部文字绝对竖直居中)
 RECT g_rcBoxFile = { 0 };
+RECT g_rcBoxIssuer = { 0 };
 RECT g_rcBoxWm = { 0 };
+RECT g_rcBoxEntityWm = { 0 };
 RECT g_rcBoxPwd = { 0 };
 
-// 每次选择文件后更新的防伪溯源码 (保持 SEC-{UNIX时间戳} 格式)
+// 每次加工动态生成的防伪溯源码 (格式：{签发人}-{UNIX时间戳})
 static std::wstring g_currentTraceId = L"";
 
-std::wstring GenerateTraceId() {
+std::wstring GenerateTraceId(const std::wstring& issuer = L"ADMIN") {
     auto now = std::chrono::system_clock::now();
     auto sec = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+    std::wstring clean = issuer;
+    size_t first = clean.find_first_not_of(L" \t\r\n");
+    if (first == std::wstring::npos) {
+        clean = L"ADMIN";
+    } else {
+        size_t last = clean.find_last_not_of(L" \t\r\n");
+        clean = clean.substr(first, last - first + 1);
+    }
     std::wstringstream wss;
-    wss << L"SEC-" << sec;
+    wss << clean << L"-" << sec;
     return wss.str();
 }
 
@@ -226,11 +240,15 @@ void ApplyFontsToControls() {
     if (g_hBtnBrowse) SendMessageW(g_hBtnBrowse, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
 
     if (g_hChkAddWm) SendMessageW(g_hChkAddWm, WM_SETFONT, (WPARAM)g_hFontBold, TRUE);
+    if (g_hLblIssuer) SendMessageW(g_hLblIssuer, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    if (g_hEditIssuer) SendMessageW(g_hEditIssuer, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     if (g_hLblWmText) SendMessageW(g_hLblWmText, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     if (g_hEditWmText) SendMessageW(g_hEditWmText, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
 
     if (g_hChkLockStruct) SendMessageW(g_hChkLockStruct, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     if (g_hChkProtectSheet) SendMessageW(g_hChkProtectSheet, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    if (g_hLblEntityWm) SendMessageW(g_hLblEntityWm, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    if (g_hEditEntityWm) SendMessageW(g_hEditEntityWm, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     if (g_hLblPassword) SendMessageW(g_hLblPassword, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     if (g_hEditPassword) SendMessageW(g_hEditPassword, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     if (g_hBtnExecuteProcess) SendMessageW(g_hBtnExecuteProcess, WM_SETFONT, (WPARAM)g_hFontTitle, TRUE);
@@ -286,46 +304,70 @@ void RealignControls(int clientWidth, int clientHeight) {
     SetWindowPos(g_hBtnBrowse, NULL, innerX + editFileW + Scale(10), fileInputY, browseBtnW, inputH, SWP_NOZORDER | SWP_NOACTIVATE);
 
     // 4. Tab 1【加工】控件布局 (像素级严格网格对齐，文字绝对竖直居中)
-    int wmSecY = fileInputY + inputH + Scale(20);
-    SetWindowPos(g_hChkAddWm, NULL, innerX, wmSecY, innerW, Scale(24), SWP_NOZORDER | SWP_NOACTIVATE);
+    int wmSecY = fileInputY + inputH + Scale(16);
+    SetWindowPos(g_hChkAddWm, NULL, innerX, wmSecY, innerW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int lblW = Scale(108); // 统一标签宽度，确保所有冒号和输入框左边缘像素级严格对齐
+    int lblW = Scale(120); // 统一标签宽度，确保所有冒号和输入框左边缘像素级严格对齐
     int inputX = innerX + lblW + Scale(8);
     int totalInputW = innerW - lblW - Scale(8);
-    int rowInputH = Scale(32);
+    int rowInputH = Scale(30);
+
+    // 签发人输入行
+    int rowIssuerY = wmSecY + Scale(26);
+    int issuerInputW = Scale(220);
+    g_rcBoxIssuer.left = inputX;
+    g_rcBoxIssuer.top = rowIssuerY;
+    g_rcBoxIssuer.right = inputX + issuerInputW;
+    g_rcBoxIssuer.bottom = rowIssuerY + rowInputH;
+
+    int editIssuerY = rowIssuerY + (rowInputH - editH) / 2;
+    SetWindowPos(g_hLblIssuer, NULL, innerX, rowIssuerY + Scale(5), lblW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_hEditIssuer, NULL, inputX + Scale(8), editIssuerY, issuerInputW - Scale(16), editH, SWP_NOZORDER | SWP_NOACTIVATE);
 
     // 水印内容行
-    int rowWmY = wmSecY + Scale(32);
+    int rowWmY = rowIssuerY + rowInputH + Scale(8);
     g_rcBoxWm.left = inputX;
     g_rcBoxWm.top = rowWmY;
     g_rcBoxWm.right = inputX + totalInputW;
     g_rcBoxWm.bottom = rowWmY + rowInputH;
 
     int editWmY = rowWmY + (rowInputH - editH) / 2;
-    SetWindowPos(g_hLblWmText, NULL, innerX, rowWmY + Scale(6), lblW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_hLblWmText, NULL, innerX, rowWmY + Scale(5), lblW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_hEditWmText, NULL, inputX + Scale(8), editWmY, totalInputW - Scale(16), editH, SWP_NOZORDER | SWP_NOACTIVATE);
 
-    // 结构锁定与保护部分 (溯源码后台自动记录，无需界面展示)
-    int protSecY = rowWmY + rowInputH + Scale(24);
-    SetWindowPos(g_hChkLockStruct, NULL, innerX, protSecY, innerW, Scale(24), SWP_NOZORDER | SWP_NOACTIVATE);
+    // 结构锁定部分
+    int protSecY = rowWmY + rowInputH + Scale(14);
+    SetWindowPos(g_hChkLockStruct, NULL, innerX, protSecY, innerW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int protRow2Y = protSecY + Scale(28);
-    SetWindowPos(g_hChkProtectSheet, NULL, innerX, protRow2Y, innerW, Scale(24), SWP_NOZORDER | SWP_NOACTIVATE);
+    // 保护单元格 (防删实体水印，不限制内容修改)
+    int protRow2Y = protSecY + Scale(26);
+    SetWindowPos(g_hChkProtectSheet, NULL, innerX, protRow2Y, innerW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
 
-    // 密码输入行 (标签充分预留宽度 Scale(130)，彻底解决“保护密码 (可选):”文字被遮挡的问题)
-    int rowPwdY = protRow2Y + Scale(28);
-    int pwdLblW = Scale(130);
-    int pwdInputX = innerX + Scale(22) + pwdLblW + Scale(6);
-    int pwdEditW = Scale(240);
+    bool isProtectChecked = (SendMessageW(g_hChkProtectSheet, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    if (isProtectChecked) {
+        // 实体水印内容行
+        int rowEntY = protRow2Y + Scale(26);
+        g_rcBoxEntityWm.left = inputX;
+        g_rcBoxEntityWm.top = rowEntY;
+        g_rcBoxEntityWm.right = inputX + totalInputW;
+        g_rcBoxEntityWm.bottom = rowEntY + rowInputH;
 
-    g_rcBoxPwd.left = pwdInputX;
-    g_rcBoxPwd.top = rowPwdY;
-    g_rcBoxPwd.right = pwdInputX + pwdEditW;
-    g_rcBoxPwd.bottom = rowPwdY + rowInputH;
+        int editEntY = rowEntY + (rowInputH - editH) / 2;
+        SetWindowPos(g_hLblEntityWm, NULL, innerX, rowEntY + Scale(5), lblW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(g_hEditEntityWm, NULL, inputX + Scale(8), editEntY, totalInputW - Scale(16), editH, SWP_NOZORDER | SWP_NOACTIVATE);
 
-    int editPwdY = rowPwdY + (rowInputH - editH) / 2;
-    SetWindowPos(g_hLblPassword, NULL, innerX + Scale(22), rowPwdY + Scale(6), pwdLblW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_hEditPassword, NULL, pwdInputX + Scale(8), editPwdY, pwdEditW - Scale(16), editH, SWP_NOZORDER | SWP_NOACTIVATE);
+        // 密码行
+        int rowPwdY = rowEntY + rowInputH + Scale(8);
+        int pwdInputW = Scale(220);
+        g_rcBoxPwd.left = inputX;
+        g_rcBoxPwd.top = rowPwdY;
+        g_rcBoxPwd.right = inputX + pwdInputW;
+        g_rcBoxPwd.bottom = rowPwdY + rowInputH;
+
+        int editPwdY = rowPwdY + (rowInputH - editH) / 2;
+        SetWindowPos(g_hLblPassword, NULL, innerX, rowPwdY + Scale(5), lblW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(g_hEditPassword, NULL, inputX + Scale(8), editPwdY, pwdInputW - Scale(16), editH, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
     // 主操作大按钮 1 (加工导出)
     int btnExecH = Scale(46);
@@ -358,14 +400,24 @@ void UpdateTabVisibility() {
     int showTab1 = (g_currentTab == 0) ? SW_SHOW : SW_HIDE;
     int showTab2 = (g_currentTab == 1) ? SW_SHOW : SW_HIDE;
 
-    // Tab 1
+    bool isProtectChecked = (SendMessageW(g_hChkProtectSheet, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    int showWatermarkSub = (g_currentTab == 0 && isProtectChecked) ? SW_SHOW : SW_HIDE;
+
+    // Tab 1 常规项
     ShowWindow(g_hChkAddWm, showTab1);
+    ShowWindow(g_hLblIssuer, showTab1);
+    ShowWindow(g_hEditIssuer, showTab1);
     ShowWindow(g_hLblWmText, showTab1);
     ShowWindow(g_hEditWmText, showTab1);
     ShowWindow(g_hChkLockStruct, showTab1);
     ShowWindow(g_hChkProtectSheet, showTab1);
-    ShowWindow(g_hLblPassword, showTab1);
-    ShowWindow(g_hEditPassword, showTab1);
+
+    // 联动项：“如果勾选保护单元格，就显示这个水印”
+    ShowWindow(g_hLblEntityWm, showWatermarkSub);
+    ShowWindow(g_hEditEntityWm, showWatermarkSub);
+    ShowWindow(g_hLblPassword, showWatermarkSub);
+    ShowWindow(g_hEditPassword, showWatermarkSub);
+
     ShowWindow(g_hBtnExecuteProcess, showTab1);
 
     // Tab 2
@@ -373,6 +425,10 @@ void UpdateTabVisibility() {
     ShowWindow(g_hLblInspectRes, showTab2);
     ShowWindow(g_hEditInspectResult, showTab2);
     ShowWindow(g_hBtnQuickUnprotect, showTab2);
+
+    RECT rcClient;
+    GetClientRect(g_hMainWnd, &rcClient);
+    RealignControls(rcClient.right - rcClient.left, rcClient.bottom - rcClient.top);
 
     InvalidateRect(g_hBtnTab1, NULL, TRUE);
     InvalidateRect(g_hBtnTab2, NULL, TRUE);
@@ -392,7 +448,9 @@ void OnBrowseFile() {
 
         if (GetOpenFileNameW(&ofn)) {
             g_selectedFilePath = szFile;
-            g_currentTraceId = GenerateTraceId(); // 每次选择文件后更新防伪溯源码时间戳: SEC-{UNIX时间戳}
+            wchar_t szIssuer[128] = { 0 };
+            GetWindowTextW(g_hEditIssuer, szIssuer, 127);
+            g_currentTraceId = GenerateTraceId(szIssuer);
             SetWindowTextW(g_hEditFilePath, szFile);
             SetWindowTextW(g_hStaticStatus, L"● 就绪：已载入目标文件。");
             if (g_currentTab == 1) {
@@ -418,22 +476,30 @@ void OnExecuteProcess() {
             return;
         }
 
+        wchar_t szIssuer[128] = { 0 };
         wchar_t szWmText[256] = { 0 };
+        wchar_t szEntityWm[256] = { 0 };
         wchar_t szPassword[128] = { 0 };
+
+        GetWindowTextW(g_hEditIssuer, szIssuer, 127);
         GetWindowTextW(g_hEditWmText, szWmText, 255);
+        GetWindowTextW(g_hEditEntityWm, szEntityWm, 255);
         GetWindowTextW(g_hEditPassword, szPassword, 127);
 
-        // 防伪溯源码后台保持为当前选择文件的时间戳 SEC-{UNIX时间戳}
-        if (g_currentTraceId.empty()) {
-            g_currentTraceId = GenerateTraceId();
-        }
+        std::wstring wIssuer = szIssuer;
+        if (wIssuer.empty()) wIssuer = L"ADMIN";
+
+        // 每次加工动态生成溯源码格式：{签发人}-{UNIX时间戳}
+        g_currentTraceId = GenerateTraceId(wIssuer);
 
         ExcelToolkitCore::ProcessOptions options;
         options.addWatermark = addWm;
         options.watermarkText = WStringToUtf8(szWmText);
+        options.issuer = WStringToUtf8(wIssuer);
         options.traceId = WStringToUtf8(g_currentTraceId);
         options.lockWorkbookStructure = lockStruct;
         options.protectSheetContent = protectSheet;
+        options.visibleWatermarkText = WStringToUtf8(szEntityWm);
         options.password = WStringToUtf8(szPassword);
         options.unprotectAll = false;
 
@@ -455,9 +521,9 @@ void OnExecuteProcess() {
             std::wstring successMsg = L"加工成功！\n已生成加密与保护文件：\n" + Utf8ToWString(outputPath) + L"\n\n已应用项目：\n";
             if (addWm) successMsg += L"  ✔ 写入 veryHidden 隐性暗水印 (防伪溯源码: " + g_currentTraceId + L")\n";
             if (lockStruct) successMsg += L"  ✔ 锁定工作簿结构（禁止取消隐藏）\n";
-            if (protectSheet) successMsg += L"  ✔ 锁定工作表内容（启用只读保护）\n";
+            if (protectSheet) successMsg += L"  ✔ 保护单元格（实体水印平铺全表且打印可见，单元格可正常修改内容）\n";
 
-            SetWindowTextW(g_hStaticStatus, L"● 加工完成！已成功输出新文件。");
+            SetWindowTextW(g_hStaticStatus, (std::wstring(L"● 加工完成！防伪溯源码: ") + g_currentTraceId).c_str());
             MessageBoxW(g_hMainWnd, successMsg.c_str(), L"操作成功", MB_ICONINFORMATION);
         } else {
             std::wstring errMsg = L"加工失败：\n" + Utf8ToWString(err);
@@ -687,30 +753,45 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         g_hBtnBrowse = CreateWindowExW(0, L"BUTTON", L"浏览文件...", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
                                        0, 0, 100, 20, hWnd, (HMENU)IDC_BTN_BROWSE, g_hInstance, NULL);
 
-        // 3. Tab 1【加工】控件 (水印默认：绝密，溯源编号在打开瞬间固定且不可更改)
+        // 3. Tab 1【加工】控件
         g_hChkAddWm = CreateWindowExW(0, L"BUTTON", L"写入 veryHidden 隐性暗水印工作表",
                                       WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                       0, 0, 100, 20, hWnd, (HMENU)IDC_CHK_ADD_WM, g_hInstance, NULL);
         SendMessageW(g_hChkAddWm, BM_SETCHECK, BST_CHECKED, 0);
 
-        g_hLblWmText = CreateWindowExW(0, L"STATIC", L"水印显示内容:", WS_CHILD | WS_VISIBLE,
+        g_hLblIssuer = CreateWindowExW(0, L"STATIC", L"签发人 (中/英文):", WS_CHILD | WS_VISIBLE,
+                                       0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
+
+        g_hEditIssuer = CreateWindowExW(0, L"EDIT", L"ADMIN",
+                                        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+                                        0, 0, 100, 20, hWnd, (HMENU)IDC_EDIT_ISSUER, g_hInstance, NULL);
+
+        g_hLblWmText = CreateWindowExW(0, L"STATIC", L"暗水印内容:", WS_CHILD | WS_VISIBLE,
                                        0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
 
         g_hEditWmText = CreateWindowExW(0, L"EDIT", L"绝密",
                                          WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
                                          0, 0, 100, 20, hWnd, (HMENU)IDC_EDIT_WM_TEXT, g_hInstance, NULL);
 
-        // 初始化默认溯源码 (格式 SEC-{UNIX时间戳})
-        g_currentTraceId = GenerateTraceId();
+        // 初始化默认溯源码 (格式 {签发人}-{UNIX时间戳})
+        g_currentTraceId = GenerateTraceId(L"ADMIN");
 
         g_hChkLockStruct = CreateWindowExW(0, L"BUTTON", L"锁定工作簿结构 (禁止右键取消隐藏暗水印工作表)",
                                             WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                             0, 0, 100, 20, hWnd, (HMENU)IDC_CHK_LOCK_STRUCT, g_hInstance, NULL);
         SendMessageW(g_hChkLockStruct, BM_SETCHECK, BST_CHECKED, 0);
 
-        g_hChkProtectSheet = CreateWindowExW(0, L"BUTTON", L"锁定工作表内容 (启用单元格只读防篡改保护)",
+        g_hChkProtectSheet = CreateWindowExW(0, L"BUTTON", L"保护单元格 (防删实体水印，允许修改表格内容)",
                                              WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                              0, 0, 100, 20, hWnd, (HMENU)IDC_CHK_PROTECT_SHEET, g_hInstance, NULL);
+        SendMessageW(g_hChkProtectSheet, BM_SETCHECK, BST_CHECKED, 0);
+
+        g_hLblEntityWm = CreateWindowExW(0, L"STATIC", L"实体水印内容:", WS_CHILD | WS_VISIBLE,
+                                         0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
+
+        g_hEditEntityWm = CreateWindowExW(0, L"EDIT", L"内部资料 严禁外发",
+                                           WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+                                           0, 0, 100, 20, hWnd, (HMENU)IDC_EDIT_ENTITY_WM, g_hInstance, NULL);
 
         g_hLblPassword = CreateWindowExW(0, L"STATIC", L"保护密码 (可选):", WS_CHILD | WS_VISIBLE,
                                          0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
@@ -805,10 +886,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             int line1Y = cardY + Scale(68);
             MoveToEx(hdc, rcCard.left + Scale(20), line1Y, NULL);
             LineTo(hdc, rcCard.right - Scale(20), line1Y);
-
-            int line2Y = cardY + Scale(154);
-            MoveToEx(hdc, rcCard.left + Scale(20), line2Y, NULL);
-            LineTo(hdc, rcCard.right - Scale(20), line2Y);
         }
 
         // 4. 绘制输入框的外框与浅灰底纹 (确保内嵌文本绝对竖直居中且边框平滑)
@@ -828,8 +905,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
         DrawEditContainer(g_rcBoxFile);
         if (g_currentTab == 0) {
+            DrawEditContainer(g_rcBoxIssuer);
             DrawEditContainer(g_rcBoxWm);
-            DrawEditContainer(g_rcBoxPwd);
+            bool isProtectChecked = (SendMessageW(g_hChkProtectSheet, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            if (isProtectChecked) {
+                DrawEditContainer(g_rcBoxEntityWm);
+                DrawEditContainer(g_rcBoxPwd);
+            }
         }
 
         SelectObject(hdc, hOldBr);
@@ -907,7 +989,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         wchar_t szFile[MAX_PATH] = { 0 };
         if (DragQueryFileW(hDrop, 0, szFile, MAX_PATH)) {
             g_selectedFilePath = szFile;
-            g_currentTraceId = GenerateTraceId(); // 每次选择/拖入文件后更新防伪溯源码时间戳: SEC-{UNIX时间戳}
+            wchar_t szIssuer[128] = { 0 };
+            GetWindowTextW(g_hEditIssuer, szIssuer, 127);
+            g_currentTraceId = GenerateTraceId(szIssuer);
             SetWindowTextW(g_hEditFilePath, szFile);
             SetWindowTextW(g_hStaticStatus, (std::wstring(L"● 已载入拖入文件: ") + szFile).c_str());
             if (g_currentTab == 1) {
@@ -923,7 +1007,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (PtInRect(&g_rcBoxFile, pt)) {
             SetFocus(g_hEditFilePath);
         } else if (g_currentTab == 0) {
-            if (PtInRect(&g_rcBoxWm, pt)) SetFocus(g_hEditWmText);
+            if (PtInRect(&g_rcBoxIssuer, pt)) SetFocus(g_hEditIssuer);
+            else if (PtInRect(&g_rcBoxWm, pt)) SetFocus(g_hEditWmText);
+            else if (PtInRect(&g_rcBoxEntityWm, pt)) SetFocus(g_hEditEntityWm);
             else if (PtInRect(&g_rcBoxPwd, pt)) SetFocus(g_hEditPassword);
         }
         break;
@@ -945,6 +1031,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             break;
         case IDC_BTN_BROWSE:
             OnBrowseFile();
+            break;
+        case IDC_CHK_PROTECT_SHEET:
+            UpdateTabVisibility();
             break;
         case IDC_BTN_EXECUTE_PROCESS:
             OnExecuteProcess();

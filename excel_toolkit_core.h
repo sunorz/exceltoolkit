@@ -32,12 +32,16 @@ public:
     // 综合处理选项结构体（支持自由勾选 Checkbox 组合）
     struct ProcessOptions {
         bool addWatermark = true;                 // 是否添加暗水印 (veryHidden)
-        std::string watermarkText = "";           // 水印文字
-        std::string traceId = "";                 // 溯源编号
+        std::string watermarkText = "";           // 暗水印文字
+        std::string issuer = "ADMIN";             // 签发人（中文或英文）
+        std::string traceId = "";                 // 溯源编号格式：{签发人}-{UNIX时间戳}
         std::string sheetName = "~sysdata_cfg";   // 隐性工作表名称
         
         bool lockWorkbookStructure = true;        // 是否锁定工作簿结构（防止取消隐藏）
-        bool protectSheetContent = false;         // 是否启用工作表内容防编辑保护
+        
+        // 保护单元格选项：专用于防止用户删除表格里的可见水印，而不防止修改单元格内容
+        bool protectSheetContent = true;          // 保护单元格开关
+        std::string visibleWatermarkText = "";    // 实体可见水印（铺满全表含无内容区域，打印可见）
         std::string password = "";                // 保护密码（可选）
         
         bool unprotectAll = false;                // 是否一键解除所有保护（工作簿与工作表）
