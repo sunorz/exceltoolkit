@@ -53,7 +53,8 @@
 #define IDC_EDIT_ISSUER          1006
 #define IDC_EDIT_WM_TEXT         1007
 #define IDC_CHK_LOCK_STRUCT      1008
-#define IDC_CHK_PROTECT_SHEET    1009
+#define IDC_CHK_ENTITY_WM        1009
+#define IDC_CHK_PROTECT_ALL      1021
 #define IDC_EDIT_ENTITY_WM       1010
 #define IDC_EDIT_PASSWORD        1011
 #define IDC_BTN_EXECUTE_PROCESS  1012
@@ -485,8 +486,8 @@ void UpdateTabVisibility() {
     int showTab1 = (g_currentTab == 0) ? SW_SHOW : SW_HIDE;
     int showTab2 = (g_currentTab == 1) ? SW_SHOW : SW_HIDE;
 
-    bool isProtectChecked = (SendMessageW(g_hChkProtectSheet, BM_GETCHECK, 0, 0) == BST_CHECKED);
-    int showWatermarkSub = (g_currentTab == 0 && isProtectChecked) ? SW_SHOW : SW_HIDE;
+    bool isEntityWmChecked = (SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    int showWatermarkSub = (g_currentTab == 0 && isEntityWmChecked) ? SW_SHOW : SW_HIDE;
 
     // Tab 1 常规项
     ShowWindow(g_hChkAddWm, showTab1);
@@ -554,9 +555,10 @@ void OnExecuteProcess() {
     try {
         bool addWm = (SendMessageW(g_hChkAddWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
         bool lockStruct = (SendMessageW(g_hChkLockStruct, BM_GETCHECK, 0, 0) == BST_CHECKED);
-        bool protectSheet = (SendMessageW(g_hChkProtectSheet, BM_GETCHECK, 0, 0) == BST_CHECKED);
+        bool entityWm = (SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
+        bool protectAll = (SendMessageW(g_hChkProtectAll, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-        if (!addWm && !lockStruct && !protectSheet) {
+        if (!addWm && !lockStruct && !entityWm && !protectAll) {
             MessageBoxW(g_hMainWnd, L"请至少勾选一项加工操作（如：添加暗水印、锁定工作簿结构或保护工作表内容）！", L"提示", MB_ICONWARNING);
             return;
         }
@@ -583,7 +585,9 @@ void OnExecuteProcess() {
         options.issuer = WStringToUtf8(wIssuer);
         options.traceId = WStringToUtf8(g_currentTraceId);
         options.lockWorkbookStructure = lockStruct;
-        options.protectSheetContent = protectSheet;
+        options.addVisibleWatermark = entityWm;
+        options.protectSheetContent = protectAll || entityWm;
+        options.unlockAllCells = (!protectAll) && entityWm;
         options.visibleWatermarkText = WStringToUtf8(szEntityWm);
         options.password = WStringToUtf8(szPassword);
         options.unprotectAll = false;
@@ -592,7 +596,7 @@ void OnExecuteProcess() {
         std::string suffix = "_processed.xlsx";
         if (addWm && lockStruct) suffix = "_watermarked_protected.xlsx";
         else if (addWm) suffix = "_watermarked.xlsx";
-        else if (lockStruct || protectSheet) suffix = "_protected.xlsx";
+        else if (lockStruct || entityWm || protectAll) suffix = "_protected.xlsx";
 
         size_t dotPos = inputPath.find_last_of('.');
         std::string outputPath = (dotPos != std::string::npos) ? (inputPath.substr(0, dotPos) + suffix) : (inputPath + suffix);
@@ -607,7 +611,8 @@ void OnExecuteProcess() {
             std::wstring successMsg = L"加工成功！\n已生成加密与保护文件：\n" + Utf8ToWString(outputPath) + L"\n\n已应用项目：\n";
             if (addWm) successMsg += L"  ✔ 写入 veryHidden 隐性暗水印 (防伪溯源码: " + g_currentTraceId + L")\n";
             if (lockStruct) successMsg += L"  ✔ 锁定工作簿结构（禁止取消隐藏）\n";
-            if (protectSheet) successMsg += L"  ✔ 保护水印（防删实体水印，允许正常修改表格内容）\n";
+            if (entityWm && !protectAll) successMsg += L"  ✔ 写入实体水印（防删水印，允许正常修改表格内容）\n";
+            if (protectAll) successMsg += L"  ✔ 保护整个文件不受更改（全表锁定）\n";
 
             SetWindowTextW(g_hStaticStatus, (std::wstring(L"● 加工完成！防伪溯源码: ") + g_currentTraceId).c_str());
             MessageBoxW(g_hMainWnd, successMsg.c_str(), L"操作成功", MB_ICONINFORMATION);
@@ -867,10 +872,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                                             0, 0, 100, 20, hWnd, (HMENU)IDC_CHK_LOCK_STRUCT, g_hInstance, NULL);
         SendMessageW(g_hChkLockStruct, BM_SETCHECK, BST_CHECKED, 0);
 
-        g_hChkProtectSheet = CreateWindowExW(0, L"BUTTON", L"保护水印 (防删实体水印，允许修改表格内容)",
+        g_hChkEntityWm = CreateWindowExW(0, L"BUTTON", L"添加实体可见水印 (全表平铺显示，允许修改表格内容)",
                                              WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-                                             0, 0, 100, 20, hWnd, (HMENU)IDC_CHK_PROTECT_SHEET, g_hInstance, NULL);
-        SendMessageW(g_hChkProtectSheet, BM_SETCHECK, BST_CHECKED, 0);
+                                             0, 0, 100, 20, hWnd, (HMENU)IDC_CHK_ENTITY_WM, g_hInstance, NULL);
+        SendMessageW(g_hChkEntityWm, BM_SETCHECK, BST_CHECKED, 0);
+        
+        g_hChkProtectAll = CreateWindowExW(0, L"BUTTON", L"保护整个文件不受更改 (锁定全表，禁止所有文字和结构修改)",
+                                             WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                                             0, 0, 100, 20, hWnd, (HMENU)IDC_CHK_PROTECT_ALL, g_hInstance, NULL);
+        SendMessageW(g_hChkProtectAll, BM_SETCHECK, BST_UNCHECKED, 0);
 
         g_hLblEntityWm = CreateWindowExW(0, L"STATIC", L"实体水印内容:", WS_CHILD | WS_VISIBLE,
                                          0, 0, 100, 20, hWnd, NULL, g_hInstance, NULL);
@@ -1126,7 +1136,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         case IDC_BTN_BROWSE:
             OnBrowseFile();
             break;
-        case IDC_CHK_PROTECT_SHEET:
+        case IDC_CHK_ENTITY_WM:
+        case IDC_CHK_PROTECT_ALL:
             UpdateTabVisibility();
             SaveUserSettings();
             break;

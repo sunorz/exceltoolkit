@@ -40,8 +40,12 @@ public:
         bool lockWorkbookStructure = true;        // 是否锁定工作簿结构（防止取消隐藏）
         
         // 保护水印选项：专用于防止用户删除表格里的实体可见水印，同时完全放开表格内文字编辑
-        bool protectSheetContent = true;          // 保护水印开关
-        std::string visibleWatermarkText = "";    // 实体可见水印（铺满全表含无内容区域，打印可见）
+        bool addVisibleWatermark = true;
+        
+        bool protectSheetContent = true;
+        std::string visibleWatermarkText = "";
+        bool unlockAllCells = false;          // 保护水印开关
+            // 实体可见水印（铺满全表含无内容区域，打印可见）
         std::string password = "";                // 保护密码（可选）
         
         bool unprotectAll = false;                // 是否一键解除所有保护（工作簿与工作表）
