@@ -430,10 +430,14 @@ void RealignControls(int clientWidth, int clientHeight) {
     int protRow2Y = protSecY + Scale(26);
     SetWindowPos(g_hChkEntityWm, NULL, innerX, protRow2Y, innerW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
 
+    // 保护整个文件 (锁定全表，禁止所有文字和结构修改)
+    int protRow3Y = protRow2Y + Scale(26);
+    SetWindowPos(g_hChkProtectAll, NULL, innerX, protRow3Y, innerW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
+
     bool isProtectChecked = (SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
     if (isProtectChecked) {
         // 实体水印内容行
-        int rowEntY = protRow2Y + Scale(26);
+        int rowEntY = protRow3Y + Scale(26);
         g_rcBoxEntityWm.left = inputX;
         g_rcBoxEntityWm.top = rowEntY;
         g_rcBoxEntityWm.right = inputX + totalInputW;
@@ -498,6 +502,7 @@ void UpdateTabVisibility() {
     ShowWindow(g_hEditWmText, showTab1);
     ShowWindow(g_hChkLockStruct, showTab1);
     ShowWindow(g_hChkEntityWm, showTab1);
+    ShowWindow(g_hChkProtectAll, showTab1);
 
     // 联动项：“如果勾选保护水印，就显示实体水印与密码”
     ShowWindow(g_hLblEntityWm, showWatermarkSub);

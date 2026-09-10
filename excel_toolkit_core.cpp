@@ -683,6 +683,77 @@ bool ExcelToolkitCore::ProcessExcelFile(
                     ctXml.insert(ctEnd, "  " + ctTag + "\n");
                 }
             }
+
+            // 同步更新 docProps/app.xml 的 HeadingPairs / TitlesOfParts。
+            // Excel 在打开文件时会用这两处的工作表计数/名称列表与 workbook.xml 里
+            // 实际的 <sheets> 列表做一致性校验（隐藏/veryHidden 表也算在内）。
+            // 新增了隐藏水印表却不同步这里，数量和名称对不上，是导致 Office
+            // 判定文件"内容有问题"、弹出修复提示甚至直接拒绝打开的常见原因。
+            if (pkg.files.find("docProps/app.xml") != pkg.files.end()) {
+                std::string& appXml = pkg.files["docProps/app.xml"];
+
+                // 收集 workbook.xml 中当前所有 <sheet name="..."/> 的名称，顺序与出现顺序一致
+                std::vector<std::string> sheetNames;
+                size_t searchPos = 0;
+                while (true) {
+                    size_t sheetTagPos = wbXml.find("<sheet ", searchPos);
+                    if (sheetTagPos == std::string::npos) break;
+                    size_t tagClose = wbXml.find("/>", sheetTagPos);
+                    if (tagClose == std::string::npos) break;
+                    std::string tagContent = wbXml.substr(sheetTagPos, tagClose - sheetTagPos);
+                    size_t namePos = tagContent.find("name=\"");
+                    if (namePos != std::string::npos) {
+                        size_t nameStart = namePos + 6;
+                        size_t nameEnd = tagContent.find("\"", nameStart);
+                        if (nameEnd != std::string::npos) {
+                            sheetNames.push_back(tagContent.substr(nameStart, nameEnd - nameStart));
+                        }
+                    }
+                    searchPos = tagClose + 2;
+                }
+
+                if (!sheetNames.empty()) {
+                    std::stringstream ssTitles;
+                    for (const auto& nm : sheetNames) {
+                        ssTitles << "<vt:lpstr>" << EscapeXml(nm) << "</vt:lpstr>";
+                    }
+                    std::string newTitlesVector = "<vt:vector size=\"" + std::to_string(sheetNames.size())
+                        + "\" baseType=\"lpstr\">" + ssTitles.str() + "</vt:vector>";
+
+                    size_t topPos = appXml.find("<TitlesOfParts>");
+                    if (topPos != std::string::npos) {
+                        size_t topEnd = appXml.find("</TitlesOfParts>");
+                        if (topEnd != std::string::npos) {
+                            size_t vecStart = appXml.find("<vt:vector", topPos);
+                            if (vecStart != std::string::npos && vecStart < topEnd) {
+                                appXml.replace(vecStart, topEnd - vecStart, newTitlesVector);
+                            }
+                        }
+                    } else {
+                        // 原文件没有 TitlesOfParts（极少数情况），补插在 </Properties> 之前
+                        size_t propEnd = appXml.find("</Properties>");
+                        if (propEnd != std::string::npos) {
+                            appXml.insert(propEnd, "<TitlesOfParts>" + newTitlesVector + "</TitlesOfParts>");
+                        }
+                    }
+
+                    // 同步 HeadingPairs 里"工作表"对应的 <vt:i4> 计数
+                    size_t hpPos = appXml.find("<HeadingPairs>");
+                    if (hpPos != std::string::npos) {
+                        size_t hpEnd = appXml.find("</HeadingPairs>");
+                        if (hpEnd != std::string::npos) {
+                            size_t i4Pos = appXml.find("<vt:i4>", hpPos);
+                            if (i4Pos != std::string::npos && i4Pos < hpEnd) {
+                                size_t i4End = appXml.find("</vt:i4>", i4Pos);
+                                if (i4End != std::string::npos) {
+                                    std::string newI4 = "<vt:i4>" + std::to_string(sheetNames.size()) + "</vt:i4>";
+                                    appXml.replace(i4Pos, i4End + 8 - i4Pos, newI4);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         std::string finalOutput = outputPath.empty() ? inputPath : outputPath;
