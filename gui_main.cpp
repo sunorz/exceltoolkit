@@ -118,7 +118,6 @@ HWND g_hLblWmText = NULL;
 HWND g_hEditWmText = NULL;
 
 HWND g_hChkLockStruct = NULL;
-HWND g_hChkProtectSheet = NULL;
 HWND g_hChkEntityWm = NULL;
 HWND g_hChkProtectAll = NULL;
 HWND g_hLblEntityWm = NULL;
@@ -235,7 +234,7 @@ void LoadUserSettings() {
 
     // 5. 保护水印 (防删实体水印)
     int protectWm = GetPrivateProfileIntW(L"Settings", L"ProtectWatermark", 1, ini.c_str());
-    if (g_hChkProtectSheet) SendMessageW(g_hChkProtectSheet, BM_SETCHECK, protectWm ? BST_CHECKED : BST_UNCHECKED, 0);
+    if (g_hChkEntityWm) SendMessageW(g_hChkEntityWm, BM_SETCHECK, protectWm ? BST_CHECKED : BST_UNCHECKED, 0);
 
     // 6. 实体水印内容
     wchar_t szEntityWm[256] = { 0 };
@@ -271,7 +270,7 @@ void SaveUserSettings() {
     int lockStruct = (g_hChkLockStruct && SendMessageW(g_hChkLockStruct, BM_GETCHECK, 0, 0) == BST_CHECKED) ? 1 : 0;
     WritePrivateProfileStringW(L"Settings", L"LockStructure", std::to_wstring(lockStruct).c_str(), ini.c_str());
 
-    int protectWm = (g_hChkProtectSheet && SendMessageW(g_hChkProtectSheet, BM_GETCHECK, 0, 0) == BST_CHECKED) ? 1 : 0;
+    int protectWm = (g_hChkEntityWm && SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED) ? 1 : 0;
     WritePrivateProfileStringW(L"Settings", L"ProtectWatermark", std::to_wstring(protectWm).c_str(), ini.c_str());
 
     if (g_hEditEntityWm) GetWindowTextW(g_hEditEntityWm, buf, 511);
@@ -334,7 +333,7 @@ void ApplyFontsToControls() {
     if (g_hEditWmText) SendMessageW(g_hEditWmText, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
 
     if (g_hChkLockStruct) SendMessageW(g_hChkLockStruct, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
-    if (g_hChkProtectSheet) SendMessageW(g_hChkProtectSheet, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    if (g_hChkEntityWm) SendMessageW(g_hChkEntityWm, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     if (g_hLblEntityWm) SendMessageW(g_hLblEntityWm, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     if (g_hEditEntityWm) SendMessageW(g_hEditEntityWm, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
     if (g_hLblPassword) SendMessageW(g_hLblPassword, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
@@ -429,9 +428,9 @@ void RealignControls(int clientWidth, int clientHeight) {
 
     // 保护水印 (防删实体水印，不限制内容修改)
     int protRow2Y = protSecY + Scale(26);
-    SetWindowPos(g_hChkProtectSheet, NULL, innerX, protRow2Y, innerW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_hChkEntityWm, NULL, innerX, protRow2Y, innerW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
 
-    bool isProtectChecked = (SendMessageW(g_hChkProtectSheet, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    bool isProtectChecked = (SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
     if (isProtectChecked) {
         // 实体水印内容行
         int rowEntY = protRow2Y + Scale(26);
@@ -498,7 +497,7 @@ void UpdateTabVisibility() {
     ShowWindow(g_hLblWmText, showTab1);
     ShowWindow(g_hEditWmText, showTab1);
     ShowWindow(g_hChkLockStruct, showTab1);
-    ShowWindow(g_hChkProtectSheet, showTab1);
+    ShowWindow(g_hChkEntityWm, showTab1);
 
     // 联动项：“如果勾选保护水印，就显示实体水印与密码”
     ShowWindow(g_hLblEntityWm, showWatermarkSub);
@@ -1006,7 +1005,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (g_currentTab == 0) {
             DrawEditContainer(g_rcBoxIssuer);
             DrawEditContainer(g_rcBoxWm);
-            bool isProtectChecked = (SendMessageW(g_hChkProtectSheet, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            bool isProtectChecked = (SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
             if (isProtectChecked) {
                 DrawEditContainer(g_rcBoxEntityWm);
                 DrawEditContainer(g_rcBoxPwd);
