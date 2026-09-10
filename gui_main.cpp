@@ -564,6 +564,24 @@ void OnExecuteProcess() {
             return;
         }
 
+        // 只要涉及任何"保护"类操作（锁定结构 / 实体水印联动保护 / 保护整个文件），
+        // 密码就必须填写，否则生成的 workbookProtection / sheetProtection 没有密码，
+        // 用户在 Excel 里点一下"审阅→撤销保护"或右键"取消隐藏"就能直接绕过，保护形同虚设。
+        bool needsPassword = lockStruct || entityWm || protectAll;
+        if (needsPassword) {
+            wchar_t szPasswordCheck[128] = { 0 };
+            GetWindowTextW(g_hEditPassword, szPasswordCheck, 127);
+            if (wcslen(szPasswordCheck) == 0) {
+                MessageBoxW(g_hMainWnd,
+                    L"已勾选保护相关选项（锁定工作簿结构 / 实体水印保护 / 保护整个文件），\n"
+                    L"必须填写保护密码，否则他人可在 Excel 中一键撤销保护、删除水印。\n\n"
+                    L"请在「保护密码」输入框中设置密码后重试。",
+                    L"缺少保护密码", MB_ICONWARNING);
+                SetFocus(g_hEditPassword);
+                return;
+            }
+        }
+
         wchar_t szIssuer[128] = { 0 };
         wchar_t szWmText[256] = { 0 };
         wchar_t szEntityWm[256] = { 0 };

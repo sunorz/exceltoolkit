@@ -297,7 +297,15 @@ bool ExcelToolkitCore::ProcessExcelFile(
                         wbXml.erase(wpPos, wpEnd + 2 - wpPos);
                     }
                 }
-                std::string wbProt = "<workbookProtection lockStructure=\"1\" lockWindows=\"0\"/>";
+                std::string wbProt;
+                if (!options.password.empty()) {
+                    uint16_t wbPwHash = ComputeExcelPasswordHash(options.password);
+                    std::stringstream wbHex;
+                    wbHex << std::hex << std::uppercase << std::setw(4) << std::setfill('0') << wbPwHash;
+                    wbProt = "<workbookProtection lockStructure=\"1\" lockWindows=\"0\" workbookPassword=\"" + wbHex.str() + "\"/>";
+                } else {
+                    wbProt = "<workbookProtection lockStructure=\"1\" lockWindows=\"0\"/>";
+                }
                 size_t insertPos = wbXml.find("</workbook>");
                 if (insertPos != std::string::npos) {
                     wbXml.insert(insertPos, wbProt);
