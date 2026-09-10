@@ -253,13 +253,15 @@ static void InsertWorksheetDrawing(std::string& sXml, const std::string& drawing
     }
 }
 
-static void UnlockStylesXml(std::string& stXml) {
-    size_t xfsPos = stXml.find("<cellXfs");
+static void UnlockXfSection(std::string& stXml, const std::string& sectionName) {
+    std::string startTag = "<" + sectionName;
+    size_t xfsPos = stXml.find(startTag);
     if (xfsPos == std::string::npos) return;
-    size_t xfsEnd = stXml.find("</cellXfs>", xfsPos);
+    std::string endTag = "</" + sectionName + ">";
+    size_t xfsEnd = stXml.find(endTag, xfsPos);
     if (xfsEnd == std::string::npos) return;
 
-    std::string cellXfsContent = stXml.substr(xfsPos, xfsEnd + 10 - xfsPos);
+    std::string cellXfsContent = stXml.substr(xfsPos, xfsEnd + endTag.length() - xfsPos);
     std::string newCellXfs;
     newCellXfs.reserve(cellXfsContent.length() + 1024);
 
@@ -357,7 +359,94 @@ static void UnlockStylesXml(std::string& stXml) {
         }
     }
 
-    stXml.replace(xfsPos, xfsEnd + 10 - xfsPos, newCellXfs);
+    stXml.replace(xfsPos, xfsEnd + endTag.length() - xfsPos, newCellXfs);
+}
+
+static void UnlockStylesXml(std::string& stXml) {
+    UnlockXfSection(stXml, "cellStyleXfs");
+    UnlockXfSection(stXml, "cellXfs");
+}
+
+static void InsertProtectedRanges(std::string& sXml) {
+    size_t prPos = sXml.find("<protectedRanges");
+    if (prPos != std::string::npos) {
+        size_t prEnd = sXml.find("</protectedRanges>", prPos);
+        if (prEnd != std::string::npos) {
+            sXml.erase(prPos, prEnd + 18 - prPos);
+        } else {
+            size_t prClose = sXml.find("/>", prPos);
+            if (prClose != std::string::npos) {
+                sXml.erase(prPos, prClose + 2 - prPos);
+            }
+        }
+    }
+
+    size_t spPos = sXml.find("<sheetProtection");
+    if (spPos != std::string::npos) {
+        size_t spEnd = sXml.find("/>", spPos);
+        if (spEnd != std::string::npos) {
+            sXml.insert(spEnd + 2, "\n  <protectedRanges>\n    <protectedRange name=\"AllowAllEdit\" sqref=\"A1:XFD1048576\"/>\n  </protectedRanges>");
+            return;
+        } else {
+            size_t spClose = sXml.find("</sheetProtection>", spPos);
+            if (spClose != std::string::npos) {
+                sXml.insert(spClose + 18, "\n  <protectedRanges>\n    <protectedRange name=\"AllowAllEdit\" sqref=\"A1:XFD1048576\"/>\n  </protectedRanges>");
+                return;
+            }
+        }
+    }
+}
+
+static void EstimateSheetDimensions(const std::string& sXml, int& outMaxRow, int& outMaxCol) {
+    outMaxRow = 200; // 默认保底平铺至少200行
+    outMaxCol = 32;  // 默认保底平铺至少32列（A~AF）
+
+    // 1. 从 <dimension ref="..."/> 解析实际范围
+    size_t dimPos = sXml.find("<dimension");
+    if (dimPos != std::string::npos) {
+        size_t refPos = sXml.find("ref=\"", dimPos);
+        if (refPos != std::string::npos && refPos < sXml.find(">", dimPos)) {
+            size_t refEnd = sXml.find("\"", refPos + 5);
+            if (refEnd != std::string::npos) {
+                std::string ref = sXml.substr(refPos + 5, refEnd - (refPos + 5));
+                size_t colon = ref.find(':');
+                std::string target = (colon != std::string::npos) ? ref.substr(colon + 1) : ref;
+                
+                int cVal = 0;
+                int rVal = 0;
+                size_t i = 0;
+                while (i < target.length() && std::isalpha((unsigned char)target[i])) {
+                    char ch = (char)std::toupper((unsigned char)target[i]);
+                    cVal = cVal * 26 + (ch - 'A' + 1);
+                    i++;
+                }
+                while (i < target.length() && std::isdigit((unsigned char)target[i])) {
+                    rVal = rVal * 10 + (target[i] - '0');
+                    i++;
+                }
+                if (rVal > 0) outMaxRow = std::max(outMaxRow, rVal + 35);
+                if (cVal > 0) outMaxCol = std::max(outMaxCol, cVal + 8);
+            }
+        }
+    }
+
+    // 2. 从最后一个 <row r="..."/> 校准
+    size_t lastRowPos = sXml.rfind("<row ");
+    if (lastRowPos != std::string::npos) {
+        size_t rPos = sXml.find("r=\"", lastRowPos);
+        if (rPos != std::string::npos) {
+            size_t rEnd = sXml.find("\"", rPos + 3);
+            if (rEnd != std::string::npos) {
+                try {
+                    int rNum = std::stoi(sXml.substr(rPos + 3, rEnd - (rPos + 3)));
+                    if (rNum > 0) outMaxRow = std::max(outMaxRow, rNum + 35);
+                } catch (...) {}
+            }
+        }
+    }
+
+    if (outMaxRow > 1000) outMaxRow = 1000;
+    if (outMaxCol > 50) outMaxCol = 50;
 }
 
 std::string ExcelToolkitCore::GenerateRandomHex8() {
@@ -525,6 +614,23 @@ bool ExcelToolkitCore::ProcessExcelFile(
                         size_t spEnd = sXml.find("/>", spPos);
                         if (spEnd != std::string::npos) {
                             sXml.erase(spPos, spEnd + 2 - spPos);
+                        } else {
+                            size_t spEndTag = sXml.find("</sheetProtection>", spPos);
+                            if (spEndTag != std::string::npos) {
+                                sXml.erase(spPos, spEndTag + 18 - spPos);
+                            }
+                        }
+                    }
+                    size_t prPos = sXml.find("<protectedRanges");
+                    if (prPos != std::string::npos) {
+                        size_t prEnd = sXml.find("</protectedRanges>", prPos);
+                        if (prEnd != std::string::npos) {
+                            sXml.erase(prPos, prEnd + 18 - prPos);
+                        } else {
+                            size_t prClose = sXml.find("/>", prPos);
+                            if (prClose != std::string::npos) {
+                                sXml.erase(prPos, prClose + 2 - prPos);
+                            }
                         }
                     }
                 }
@@ -569,19 +675,31 @@ bool ExcelToolkitCore::ProcessExcelFile(
                     // 全表锁定模式：严格禁止修改内容与对象
                     protTag = "<sheetProtection" + pwAttr + " sheet=\"1\" objects=\"1\" scenarios=\"1\" selectLockedCells=\"1\" selectUnlockedCells=\"1\"/>";
                 } else {
-                    // 水印保护模式：锁定图形水印对象，放行单元格编辑与输入
-                    protTag = "<sheetProtection" + pwAttr + " sheet=\"1\" objects=\"1\" scenarios=\"0\" selectLockedCells=\"1\" selectUnlockedCells=\"1\"/>";
+                    // 水印保护模式：锁定图形水印对象，全面放行所有单元格的选择、输入修改、格式与排序
+                    protTag = "<sheetProtection" + pwAttr + " sheet=\"1\" objects=\"1\" scenarios=\"0\" formatCells=\"1\" formatColumns=\"1\" formatRows=\"1\" insertColumns=\"1\" insertRows=\"1\" insertHyperlinks=\"1\" deleteColumns=\"1\" deleteRows=\"1\" selectLockedCells=\"1\" selectUnlockedCells=\"1\" sort=\"1\" autoFilter=\"1\" pivotTables=\"1\"/>";
                 }
 
-                for (auto& kv : pkg.files) {
-                    if (kv.first.rfind("xl/worksheets/sheet", 0) == 0 && kv.first.find(".xml") != std::string::npos) {
+                // 收集所有真实工作表路径，避免边遍历 map 边向 map 插入新文件导致迭代器失效，确保工作簿中所有 Sheet 均被覆盖
+                std::vector<std::string> worksheetPaths;
+                for (const auto& kv : pkg.files) {
+                    if (kv.first.rfind("xl/worksheets/", 0) == 0 && kv.first.find(".xml") != std::string::npos && kv.first.find("/_rels/") == std::string::npos) {
                         if (kv.first.find("sheet_sysdata_cfg") != std::string::npos) continue;
-                        InsertSheetProtection(kv.second, protTag);
+                        worksheetPaths.push_back(kv.first);
+                    }
+                }
+
+                for (const auto& wsPath : worksheetPaths) {
+                    auto itWs = pkg.files.find(wsPath);
+                    if (itWs != pkg.files.end()) {
+                        InsertSheetProtection(itWs->second, protTag);
+                        if (options.unlockAllCells) {
+                            InsertProtectedRanges(itWs->second);
+                        }
                     }
                 }
             }
 
-            // 4. 添加实体可见水印 (全表平铺矩阵显示，文字半透明倾斜，背景无填充不挡鼠标点击)
+            // 4. 添加实体可见水印 (全工作簿每个 Sheet 纵向与横向全矩阵平铺，文字半透明倾斜，背景无填充不挡鼠标点击)
             if (options.addVisibleWatermark) {
                 std::string entityWm = options.visibleWatermarkText.empty() ? "内部资料 严禁外传" : options.visibleWatermarkText;
                 
@@ -599,132 +717,142 @@ bool ExcelToolkitCore::ProcessExcelFile(
                     }
                 }
 
-                for (auto& kv : pkg.files) {
-                    if (kv.first.rfind("xl/worksheets/sheet", 0) == 0 && kv.first.find(".xml") != std::string::npos) {
+                // 提取所有工作表文件列表
+                std::vector<std::string> wsPathsForWatermark;
+                for (const auto& kv : pkg.files) {
+                    if (kv.first.rfind("xl/worksheets/", 0) == 0 && kv.first.find(".xml") != std::string::npos && kv.first.find("/_rels/") == std::string::npos) {
                         if (kv.first.find("sheet_sysdata_cfg") != std::string::npos) continue;
-                        std::string sheetPath = kv.first;
-                        std::string& sXml = kv.second;
+                        wsPathsForWatermark.push_back(kv.first);
+                    }
+                }
 
-                        size_t lastSlash = sheetPath.find_last_of('/');
-                        std::string sheetFileName = sheetPath.substr(lastSlash + 1);
+                for (const std::string& sheetPath : wsPathsForWatermark) {
+                    auto itWs = pkg.files.find(sheetPath);
+                    if (itWs == pkg.files.end()) continue;
+                    std::string& sXml = itWs->second;
 
-                        size_t dPos = sXml.find("<drawing r:id=\"");
-                        std::string drawRelId = "";
-                        if (dPos != std::string::npos) {
-                            size_t rEnd = sXml.find("\"", dPos + 15);
-                            if (rEnd != std::string::npos) {
-                                drawRelId = sXml.substr(dPos + 15, rEnd - (dPos + 15));
-                            }
+                    size_t lastSlash = sheetPath.find_last_of('/');
+                    std::string sheetFileName = sheetPath.substr(lastSlash + 1);
+
+                    size_t dPos = sXml.find("<drawing r:id=\"");
+                    std::string drawRelId = "";
+                    if (dPos != std::string::npos) {
+                        size_t rEnd = sXml.find("\"", dPos + 15);
+                        if (rEnd != std::string::npos) {
+                            drawRelId = sXml.substr(dPos + 15, rEnd - (dPos + 15));
                         }
+                    }
 
-                        std::string sheetRelsPath = "xl/worksheets/_rels/" + sheetFileName + ".rels";
-                        int drawingId = 0;
-                        
-                        if (!drawRelId.empty() && pkg.files.find(sheetRelsPath) != pkg.files.end()) {
-                            std::string& sRels = pkg.files[sheetRelsPath];
-                            size_t rPos = sRels.find("Id=\"" + drawRelId + "\"");
-                            if (rPos != std::string::npos) {
-                                size_t tPos = sRels.find("Target=\"", rPos);
-                                if (tPos != std::string::npos) {
-                                    size_t tEnd = sRels.find("\"", tPos + 8);
-                                    if (tEnd != std::string::npos) {
-                                        std::string target = sRels.substr(tPos + 8, tEnd - (tPos + 8));
-                                        size_t numStart = target.find("drawing");
-                                        if (numStart != std::string::npos) {
-                                            numStart += 7;
-                                            size_t dot = target.find(".xml", numStart);
-                                            if (dot != std::string::npos) {
-                                                try {
-                                                    drawingId = std::stoi(target.substr(numStart, dot - numStart));
-                                                } catch (...) {}
-                                            }
+                    std::string sheetRelsPath = "xl/worksheets/_rels/" + sheetFileName + ".rels";
+                    int drawingId = 0;
+                    
+                    if (!drawRelId.empty() && pkg.files.find(sheetRelsPath) != pkg.files.end()) {
+                        std::string& sRels = pkg.files[sheetRelsPath];
+                        size_t rPos = sRels.find("Id=\"" + drawRelId + "\"");
+                        if (rPos != std::string::npos) {
+                            size_t tPos = sRels.find("Target=\"", rPos);
+                            if (tPos != std::string::npos) {
+                                size_t tEnd = sRels.find("\"", tPos + 8);
+                                if (tEnd != std::string::npos) {
+                                    std::string target = sRels.substr(tPos + 8, tEnd - (tPos + 8));
+                                    size_t numStart = target.find("drawing");
+                                    if (numStart != std::string::npos) {
+                                        numStart += 7;
+                                        size_t dot = target.find(".xml", numStart);
+                                        if (dot != std::string::npos) {
+                                            try {
+                                                drawingId = std::stoi(target.substr(numStart, dot - numStart));
+                                            } catch (...) {}
                                         }
                                     }
                                 }
                             }
                         }
+                    }
 
-                        if (drawingId == 0) {
-                            maxDrawingId++;
-                            drawingId = maxDrawingId;
-                            drawRelId = "rIdWatermark" + std::to_string(drawingId);
-                            
-                            std::string relEntry = "<Relationship Id=\"" + drawRelId + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing\" Target=\"../drawings/drawing" + std::to_string(drawingId) + ".xml\"/>";
-                            if (pkg.files.find(sheetRelsPath) != pkg.files.end()) {
-                                std::string& sRels = pkg.files[sheetRelsPath];
-                                size_t rEnd = sRels.find("</Relationships>");
-                                if (rEnd != std::string::npos) {
-                                    sRels.insert(rEnd, "  " + relEntry + "\n");
-                                }
-                            } else {
-                                pkg.files[sheetRelsPath] = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n  " + relEntry + "\n</Relationships>";
-                            }
-
-                            std::string drawingTag = "<drawing r:id=\"" + drawRelId + "\"/>";
-                            InsertWorksheetDrawing(sXml, drawingTag);
-                        }
-
-                        std::string drawingXmlPath = "xl/drawings/drawing" + std::to_string(drawingId) + ".xml";
-                        std::string& dXml = pkg.files[drawingXmlPath];
-
-                        if (dXml.empty()) {
-                            dXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<xdr:wsDr xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">\n</xdr:wsDr>";
-                        }
+                    if (drawingId == 0) {
+                        maxDrawingId++;
+                        drawingId = maxDrawingId;
+                        drawRelId = "rIdWatermark" + std::to_string(drawingId);
                         
-                        size_t wsDrEnd = dXml.find("</xdr:wsDr>");
-                        if (wsDrEnd != std::string::npos) {
-                            // 全屏平铺矩阵：在 0~80行、0~30列范围内生成均匀分布的倾斜半透明水印文本框
-                            // 背景为 <a:noFill/>，边框为无边框，绝不拦截鼠标对单元格的点击和双击编辑！
-                            std::stringstream ssShape;
-                            int shapeCounter = 0;
-                            for (int r = 0; r <= 60; r += 15) {
-                                for (int c = 0; c <= 24; c += 8) {
-                                    int shapeId = 990000 + drawingId * 100 + shapeCounter++;
-                                    ssShape << "  <xdr:twoCellAnchor editAs=\"oneCell\">\n"
-                                            << "    <xdr:from><xdr:col>" << c << "</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>" << r << "</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>\n"
-                                            << "    <xdr:to><xdr:col>" << (c + 7) << "</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>" << (r + 10) << "</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>\n"
-                                            << "    <xdr:sp macro=\"\" textlink=\"\">\n"
-                                            << "      <xdr:nvSpPr>\n"
-                                            << "        <xdr:cNvPr id=\"" << shapeId << "\" name=\"Watermark_" << shapeId << "\"/>\n"
-                                            << "        <xdr:cNvSpPr txBox=\"1\">\n"
-                                            << "          <a:spLocks noSelect=\"1\" noMove=\"1\" noResize=\"1\" noEditPoints=\"1\" noAdjustHandles=\"1\" noChangeArrowheads=\"1\" noChangeShapeType=\"1\" noGrouping=\"1\"/>\n"
-                                            << "        </xdr:cNvSpPr>\n"
-                                            << "      </xdr:nvSpPr>\n"
-                                            << "      <xdr:spPr>\n"
-                                            << "        <a:xfrm rot=\"-1800000\"><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></a:xfrm>\n"
-                                            << "        <a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>\n"
-                                            << "        <a:noFill/>\n"
-                                            << "        <a:ln><a:noFill/></a:ln>\n"
-                                            << "      </xdr:spPr>\n"
-                                            << "      <xdr:txBody>\n"
-                                            << "        <a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"none\" rtlCol=\"0\" anchor=\"ctr\"/>\n"
-                                            << "        <a:lstStyle/>\n"
-                                            << "        <a:p>\n"
-                                            << "          <a:pPr algn=\"ctr\"/>\n"
-                                            << "          <a:r>\n"
-                                            << "            <a:rPr lang=\"zh-CN\" sz=\"2400\" b=\"1\">\n"
-                                            << "              <a:solidFill><a:srgbClr val=\"909090\"><a:alpha val=\"22000\"/></a:srgbClr></a:solidFill>\n"
-                                            << "              <a:latin typeface=\"Microsoft YaHei\"/>\n"
-                                            << "              <a:ea typeface=\"Microsoft YaHei\"/>\n"
-                                            << "            </a:rPr>\n"
-                                            << "            <a:t>" << EscapeXml(entityWm) << "</a:t>\n"
-                                            << "          </a:r>\n"
-                                            << "        </a:p>\n"
-                                            << "      </xdr:txBody>\n"
-                                            << "    </xdr:sp>\n"
-                                            << "    <xdr:clientData fLocksWithSheet=\"1\" fPrintsWithSheet=\"1\"/>\n"
-                                            << "  </xdr:twoCellAnchor>\n";
-                                }
+                        std::string relEntry = "<Relationship Id=\"" + drawRelId + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing\" Target=\"../drawings/drawing" + std::to_string(drawingId) + ".xml\"/>";
+                        if (pkg.files.find(sheetRelsPath) != pkg.files.end()) {
+                            std::string& sRels = pkg.files[sheetRelsPath];
+                            size_t rEnd = sRels.find("</Relationships>");
+                            if (rEnd != std::string::npos) {
+                                sRels.insert(rEnd, "  " + relEntry + "\n");
                             }
-                            dXml.insert(wsDrEnd, ssShape.str());
+                        } else {
+                            pkg.files[sheetRelsPath] = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n  " + relEntry + "\n</Relationships>";
                         }
 
-                        if (ctXml.find("/" + drawingXmlPath) == std::string::npos) {
-                            std::string ctTag = "<Override PartName=\"/" + drawingXmlPath + "\" ContentType=\"application/vnd.openxmlformats-officedocument.drawing+xml\"/>";
-                            size_t ctEnd = ctXml.find("</Types>");
-                            if (ctEnd != std::string::npos) {
-                                ctXml.insert(ctEnd, "  " + ctTag + "\n");
+                        std::string drawingTag = "<drawing r:id=\"" + drawRelId + "\"/>";
+                        InsertWorksheetDrawing(sXml, drawingTag);
+                    }
+
+                    std::string drawingXmlPath = "xl/drawings/drawing" + std::to_string(drawingId) + ".xml";
+                    std::string& dXml = pkg.files[drawingXmlPath];
+
+                    if (dXml.empty()) {
+                        dXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<xdr:wsDr xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">\n</xdr:wsDr>";
+                    }
+                    
+                    size_t wsDrEnd = dXml.find("</xdr:wsDr>");
+                    if (wsDrEnd != std::string::npos) {
+                        // 动态根据表格实际维度计算覆盖范围，确保铺满整个工作表
+                        int maxRow = 200;
+                        int maxCol = 32;
+                        EstimateSheetDimensions(sXml, maxRow, maxCol);
+
+                        std::stringstream ssShape;
+                        int shapeCounter = 0;
+                        for (int r = 0; r <= maxRow; r += 14) {
+                            for (int c = 0; c <= maxCol; c += 7) {
+                                int shapeId = 990000 + drawingId * 1000 + shapeCounter++;
+                                ssShape << "  <xdr:twoCellAnchor editAs=\"oneCell\">\n"
+                                        << "    <xdr:from><xdr:col>" << c << "</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>" << r << "</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>\n"
+                                        << "    <xdr:to><xdr:col>" << (c + 6) << "</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>" << (r + 9) << "</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>\n"
+                                        << "    <xdr:sp macro=\"\" textlink=\"\">\n"
+                                        << "      <xdr:nvSpPr>\n"
+                                        << "        <xdr:cNvPr id=\"" << shapeId << "\" name=\"Watermark_" << shapeId << "\"/>\n"
+                                        << "        <xdr:cNvSpPr txBox=\"1\">\n"
+                                        << "          <a:spLocks noSelect=\"1\" noMove=\"1\" noResize=\"1\" noEditPoints=\"1\" noAdjustHandles=\"1\" noChangeArrowheads=\"1\" noChangeShapeType=\"1\" noGrouping=\"1\"/>\n"
+                                        << "        </xdr:cNvSpPr>\n"
+                                        << "      </xdr:nvSpPr>\n"
+                                        << "      <xdr:spPr>\n"
+                                        << "        <a:xfrm rot=\"-1800000\"><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></a:xfrm>\n"
+                                        << "        <a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>\n"
+                                        << "        <a:noFill/>\n"
+                                        << "        <a:ln><a:noFill/></a:ln>\n"
+                                        << "      </xdr:spPr>\n"
+                                        << "      <xdr:txBody>\n"
+                                        << "        <a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"none\" rtlCol=\"0\" anchor=\"ctr\"/>\n"
+                                        << "        <a:lstStyle/>\n"
+                                        << "        <a:p>\n"
+                                        << "          <a:pPr algn=\"ctr\"/>\n"
+                                        << "          <a:r>\n"
+                                        << "            <a:rPr lang=\"zh-CN\" sz=\"2400\" b=\"1\">\n"
+                                        << "              <a:solidFill><a:srgbClr val=\"909090\"><a:alpha val=\"22000\"/></a:srgbClr></a:solidFill>\n"
+                                        << "              <a:latin typeface=\"Microsoft YaHei\"/>\n"
+                                        << "              <a:ea typeface=\"Microsoft YaHei\"/>\n"
+                                        << "            </a:rPr>\n"
+                                        << "            <a:t>" << EscapeXml(entityWm) << "</a:t>\n"
+                                        << "          </a:r>\n"
+                                        << "        </a:p>\n"
+                                        << "      </xdr:txBody>\n"
+                                        << "    </xdr:sp>\n"
+                                        << "    <xdr:clientData fLocksWithSheet=\"1\" fPrintsWithSheet=\"1\"/>\n"
+                                        << "  </xdr:twoCellAnchor>\n";
                             }
+                        }
+                        dXml.insert(wsDrEnd, ssShape.str());
+                    }
+
+                    if (ctXml.find("/" + drawingXmlPath) == std::string::npos) {
+                        std::string ctTag = "<Override PartName=\"/" + drawingXmlPath + "\" ContentType=\"application/vnd.openxmlformats-officedocument.drawing+xml\"/>";
+                        size_t ctEnd = ctXml.find("</Types>");
+                        if (ctEnd != std::string::npos) {
+                            ctXml.insert(ctEnd, "  " + ctTag + "\n");
                         }
                     }
                 }
