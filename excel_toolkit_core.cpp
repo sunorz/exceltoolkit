@@ -5,6 +5,9 @@
  */
 
 #define _CRT_SECURE_NO_WARNINGS
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include "excel_toolkit_core.h"
 #include "miniz.h"
 
@@ -22,7 +25,12 @@
 #include <cstring>
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #endif
 
@@ -424,8 +432,8 @@ static void EstimateSheetDimensions(const std::string& sXml, int& outMaxRow, int
                     rVal = rVal * 10 + (target[i] - '0');
                     i++;
                 }
-                if (rVal > 0) outMaxRow = std::max(outMaxRow, rVal + 35);
-                if (cVal > 0) outMaxCol = std::max(outMaxCol, cVal + 8);
+                if (rVal > 0 && rVal + 35 > outMaxRow) outMaxRow = rVal + 35;
+                if (cVal > 0 && cVal + 8 > outMaxCol) outMaxCol = cVal + 8;
             }
         }
     }
@@ -439,7 +447,7 @@ static void EstimateSheetDimensions(const std::string& sXml, int& outMaxRow, int
             if (rEnd != std::string::npos) {
                 try {
                     int rNum = std::stoi(sXml.substr(rPos + 3, rEnd - (rPos + 3)));
-                    if (rNum > 0) outMaxRow = std::max(outMaxRow, rNum + 35);
+                    if (rNum > 0 && rNum + 35 > outMaxRow) outMaxRow = rNum + 35;
                 } catch (...) {}
             }
         }
