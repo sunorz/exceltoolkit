@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ============================================================================
  * excel_toolkit_core.cpp - OpenXML / ZIP 内存安全深度实现
  * ============================================================================
@@ -116,6 +116,248 @@ static std::string EscapeXml(const std::string& str) {
         else result += c;
     }
     return result;
+}
+
+static void InsertWorkbookProtection(std::string& wbXml, const std::string& protTag) {
+    size_t wpPos = wbXml.find("<workbookProtection");
+    if (wpPos != std::string::npos) {
+        size_t wpEnd = wbXml.find("/>", wpPos);
+        if (wpEnd != std::string::npos) {
+            wbXml.erase(wpPos, wpEnd + 2 - wpPos);
+        } else {
+            size_t wpEndTag = wbXml.find("</workbookProtection>", wpPos);
+            if (wpEndTag != std::string::npos) {
+                wbXml.erase(wpPos, wpEndTag + 21 - wpPos);
+            }
+        }
+    }
+    if (protTag.empty()) return;
+
+    const char* afterTags[] = {
+        "bookViews", "sheets", "functionGroups", "externalReferences",
+        "definedNames", "calcPr", "oleSize", "customWorkbookViews",
+        "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing",
+        "fileRecoveryPr", "webPublishObjects", "extLst"
+    };
+
+    size_t insPos = std::string::npos;
+    for (const char* tag : afterTags) {
+        std::string t1 = std::string("<") + tag + " ";
+        std::string t2 = std::string("<") + tag + ">";
+        std::string t3 = std::string("<") + tag + "/>";
+        size_t p1 = wbXml.find(t1);
+        size_t p2 = wbXml.find(t2);
+        size_t p3 = wbXml.find(t3);
+        if (p1 != std::string::npos && p1 < insPos) insPos = p1;
+        if (p2 != std::string::npos && p2 < insPos) insPos = p2;
+        if (p3 != std::string::npos && p3 < insPos) insPos = p3;
+    }
+
+    if (insPos != std::string::npos) {
+        wbXml.insert(insPos, protTag + "\n  ");
+    } else {
+        size_t endWb = wbXml.rfind("</workbook>");
+        if (endWb != std::string::npos) {
+            wbXml.insert(endWb, protTag + "\n");
+        }
+    }
+}
+
+static void InsertSheetProtection(std::string& sXml, const std::string& protTag) {
+    size_t spPos = sXml.find("<sheetProtection");
+    if (spPos != std::string::npos) {
+        size_t spEnd = sXml.find("/>", spPos);
+        if (spEnd != std::string::npos) {
+            sXml.erase(spPos, spEnd + 2 - spPos);
+        } else {
+            size_t spEndTag = sXml.find("</sheetProtection>", spPos);
+            if (spEndTag != std::string::npos) {
+                sXml.erase(spPos, spEndTag + 18 - spPos);
+            }
+        }
+    }
+    if (protTag.empty()) return;
+
+    const char* afterTags[] = {
+        "protectedRanges", "scenarios", "autoFilter", "sortState", "dataConsolidate",
+        "customSheetViews", "mergeCells", "phoneticPr", "conditionalFormatting",
+        "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup",
+        "headerFooter", "rowBreaks", "colBreaks", "customProperties", "cellWatches",
+        "ignoredErrors", "smartTags", "drawing", "legacyDrawing", "legacyDrawingHF",
+        "legacyDrawingMacro", "picture", "oleObjects", "controls", "webPublishItems",
+        "tableParts", "extLst"
+    };
+
+    size_t insPos = std::string::npos;
+    for (const char* tag : afterTags) {
+        std::string t1 = std::string("<") + tag + " ";
+        std::string t2 = std::string("<") + tag + ">";
+        std::string t3 = std::string("<") + tag + "/>";
+        size_t p1 = sXml.find(t1);
+        size_t p2 = sXml.find(t2);
+        size_t p3 = sXml.find(t3);
+        if (p1 != std::string::npos && p1 < insPos) insPos = p1;
+        if (p2 != std::string::npos && p2 < insPos) insPos = p2;
+        if (p3 != std::string::npos && p3 < insPos) insPos = p3;
+    }
+
+    if (insPos != std::string::npos) {
+        sXml.insert(insPos, protTag + "\n  ");
+    } else {
+        size_t sdEnd = sXml.find("</sheetData>");
+        if (sdEnd != std::string::npos) {
+            sXml.insert(sdEnd + 12, "\n  " + protTag);
+        } else {
+            size_t sdSelfClose = sXml.find("<sheetData/>");
+            if (sdSelfClose != std::string::npos) {
+                sXml.insert(sdSelfClose + 12, "\n  " + protTag);
+            } else {
+                size_t endWs = sXml.rfind("</worksheet>");
+                if (endWs != std::string::npos) {
+                    sXml.insert(endWs, protTag + "\n");
+                }
+            }
+        }
+    }
+}
+
+static void InsertWorksheetDrawing(std::string& sXml, const std::string& drawingTag) {
+    if (sXml.find("<drawing ") != std::string::npos || sXml.find("<drawing>") != std::string::npos) {
+        return;
+    }
+
+    const char* drawingAfterTags[] = {
+        "legacyDrawing", "legacyDrawingHF", "legacyDrawingMacro", "picture",
+        "oleObjects", "controls", "webPublishItems", "tableParts", "extLst"
+    };
+    size_t insPos = std::string::npos;
+    for (const char* tag : drawingAfterTags) {
+        std::string t1 = std::string("<") + tag + " ";
+        std::string t2 = std::string("<") + tag + ">";
+        std::string t3 = std::string("<") + tag + "/>";
+        size_t p1 = sXml.find(t1);
+        size_t p2 = sXml.find(t2);
+        size_t p3 = sXml.find(t3);
+        if (p1 != std::string::npos && p1 < insPos) insPos = p1;
+        if (p2 != std::string::npos && p2 < insPos) insPos = p2;
+        if (p3 != std::string::npos && p3 < insPos) insPos = p3;
+    }
+
+    if (insPos != std::string::npos) {
+        sXml.insert(insPos, drawingTag + "\n  ");
+    } else {
+        size_t endWs = sXml.rfind("</worksheet>");
+        if (endWs != std::string::npos) {
+            sXml.insert(endWs, "  " + drawingTag + "\n");
+        }
+    }
+}
+
+static void UnlockStylesXml(std::string& stXml) {
+    size_t xfsPos = stXml.find("<cellXfs");
+    if (xfsPos == std::string::npos) return;
+    size_t xfsEnd = stXml.find("</cellXfs>", xfsPos);
+    if (xfsEnd == std::string::npos) return;
+
+    std::string cellXfsContent = stXml.substr(xfsPos, xfsEnd + 10 - xfsPos);
+    std::string newCellXfs;
+    newCellXfs.reserve(cellXfsContent.length() + 1024);
+
+    size_t cur = 0;
+    while (cur < cellXfsContent.length()) {
+        size_t xfStart = cellXfsContent.find("<xf ", cur);
+        if (xfStart == std::string::npos) {
+            newCellXfs.append(cellXfsContent.substr(cur));
+            break;
+        }
+
+        newCellXfs.append(cellXfsContent.substr(cur, xfStart - cur));
+
+        size_t openTagEnd = cellXfsContent.find(">", xfStart);
+        if (openTagEnd == std::string::npos) {
+            newCellXfs.append(cellXfsContent.substr(xfStart));
+            break;
+        }
+
+        bool isSelfClosing = (cellXfsContent[openTagEnd - 1] == '/');
+        std::string openTag = cellXfsContent.substr(xfStart, openTagEnd + 1 - xfStart);
+
+        size_t apPos = openTag.find("applyProtection=\"");
+        if (apPos != std::string::npos) {
+            size_t valStart = apPos + 17;
+            size_t quoteEnd = openTag.find("\"", valStart);
+            if (quoteEnd != std::string::npos) {
+                openTag.replace(valStart, quoteEnd - valStart, "1");
+            }
+        } else {
+            openTag.insert(4, "applyProtection=\"1\" ");
+        }
+
+        if (isSelfClosing) {
+            size_t slashPos = openTag.rfind("/>");
+            if (slashPos != std::string::npos) {
+                openTag.replace(slashPos, 2, "><protection locked=\"0\"/></xf>");
+            }
+            newCellXfs.append(openTag);
+            cur = openTagEnd + 1;
+        } else {
+            size_t xfCloseTag = cellXfsContent.find("</xf>", openTagEnd);
+            if (xfCloseTag == std::string::npos) {
+                newCellXfs.append(openTag);
+                cur = openTagEnd + 1;
+                continue;
+            }
+
+            std::string body = cellXfsContent.substr(openTagEnd + 1, xfCloseTag - (openTagEnd + 1));
+            size_t pPos = body.find("<protection");
+            if (pPos != std::string::npos) {
+                size_t pClose = body.find(">", pPos);
+                if (pClose != std::string::npos) {
+                    std::string protTag = body.substr(pPos, pClose + 1 - pPos);
+                    size_t lkPos = protTag.find("locked=\"");
+                    if (lkPos != std::string::npos) {
+                        size_t lkVal = lkPos + 8;
+                        size_t lkEnd = protTag.find("\"", lkVal);
+                        if (lkEnd != std::string::npos) {
+                            protTag.replace(lkVal, lkEnd - lkVal, "0");
+                        }
+                    } else {
+                        protTag.insert(11, " locked=\"0\"");
+                    }
+                    body.replace(pPos, pClose + 1 - pPos, protTag);
+                }
+            } else {
+                size_t alignPos = body.find("<alignment");
+                if (alignPos != std::string::npos) {
+                    size_t alignEnd = body.find("</alignment>", alignPos);
+                    if (alignEnd != std::string::npos) {
+                        body.insert(alignEnd + 12, "<protection locked=\"0\"/>");
+                    } else {
+                        size_t alignSelfClose = body.find("/>", alignPos);
+                        if (alignSelfClose != std::string::npos) {
+                            body.insert(alignSelfClose + 2, "<protection locked=\"0\"/>");
+                        } else {
+                            body.insert(0, "<protection locked=\"0\"/>");
+                        }
+                    }
+                } else {
+                    size_t extPos = body.find("<extLst");
+                    if (extPos != std::string::npos) {
+                        body.insert(extPos, "<protection locked=\"0\"/>");
+                    } else {
+                        body.insert(0, "<protection locked=\"0\"/>");
+                    }
+                }
+            }
+
+            newCellXfs.append(openTag);
+            newCellXfs.append(body);
+            newCellXfs.append("</xf>");
+            cur = xfCloseTag + 5;
+        }
+    }
+
+    stXml.replace(xfsPos, xfsEnd + 10 - xfsPos, newCellXfs);
 }
 
 std::string ExcelToolkitCore::GenerateRandomHex8() {
@@ -288,173 +530,58 @@ bool ExcelToolkitCore::ProcessExcelFile(
                 }
             }
         } else {
+            // 1. 锁定工作簿结构 (严格遵循 OpenXML XSD Sequence：位于 bookViews, sheets 之前)
             if (options.lockWorkbookStructure) {
-                size_t wpPos = wbXml.find("<workbookProtection");
-                if (wpPos != std::string::npos) {
-                    size_t wpEnd = wbXml.find("/>", wpPos);
-                    if (wpEnd != std::string::npos) {
-                        wbXml.erase(wpPos, wpEnd + 2 - wpPos);
-                    }
-                }
                 std::string wbProt;
                 if (!options.password.empty()) {
                     uint16_t wbPwHash = ComputeExcelPasswordHash(options.password);
                     std::stringstream wbHex;
                     wbHex << std::hex << std::uppercase << std::setw(4) << std::setfill('0') << wbPwHash;
-                    wbProt = "<workbookProtection lockStructure=\"1\" lockWindows=\"0\" workbookPassword=\"" + wbHex.str() + "\"/>";
+                    wbProt = "<workbookProtection workbookPassword=\"" + wbHex.str() + "\" lockStructure=\"1\"/>";
                 } else {
-                    wbProt = "<workbookProtection lockStructure=\"1\" lockWindows=\"0\"/>";
+                    wbProt = "<workbookProtection lockStructure=\"1\"/>";
                 }
-                
-                // 修复：严格遵循 OpenXML 规范，<workbookProtection> 必须置于 <sheets> 节点之前
-                size_t insertPos = wbXml.find("<sheets>");
-                if (insertPos != std::string::npos) {
-                    wbXml.insert(insertPos, wbProt + "\n  ");
-                } else {
-                    size_t endPos = wbXml.find("</workbook>");
-                    if (endPos != std::string::npos) wbXml.insert(endPos, wbProt);
-                }
+                InsertWorkbookProtection(wbXml, wbProt);
             }
 
-
+            // 2. 解锁所有单元格样式 (为实体可见水印模式放开修改权限)
             if (options.unlockAllCells) {
                 if (pkg.files.find("xl/styles.xml") != pkg.files.end()) {
-                    std::string& stXml = pkg.files["xl/styles.xml"];
-                    size_t xfsPos = stXml.find("<cellXfs");
-                    if (xfsPos != std::string::npos) {
-                        size_t xfsEnd = stXml.find("</cellXfs>", xfsPos);
-                        if (xfsEnd != std::string::npos) {
-                            size_t cur = xfsPos;
-                            while ((cur = stXml.find("<xf ", cur)) != std::string::npos && cur < xfsEnd) {
-                                size_t firstClose = stXml.find(">", cur);
-                                if (firstClose == std::string::npos || firstClose > xfsEnd) break;
-                                
-                                bool isSelfClosing = (stXml[firstClose - 1] == '/');
-                                
-                                std::string openTag = stXml.substr(cur, firstClose + 1 - cur);
-                                size_t apPos = openTag.find("applyProtection=\"");
-                                if (apPos != std::string::npos) {
-                                    if (openTag[apPos + 17] == '0') openTag[apPos + 17] = '1';
-                                } else {
-                                    openTag.insert(3, " applyProtection=\"1\"");
-                                }
-                                
-                                if (isSelfClosing) {
-                                    size_t sl = openTag.rfind("/>");
-                                    if (sl != std::string::npos) {
-                                        openTag.replace(sl, 2, "><protection locked=\"0\" hidden=\"0\"/></xf>");
-                                    }
-                                    stXml.replace(cur, firstClose + 1 - cur, openTag);
-                                    xfsEnd = stXml.find("</cellXfs>", cur);
-                                    cur += openTag.length();
-                                } else {
-                                    stXml.replace(cur, firstClose + 1 - cur, openTag);
-                                    xfsEnd = stXml.find("</cellXfs>", cur);
-                                    firstClose = cur + openTag.length() - 1;
-                                    
-                                    size_t endTag = stXml.find("</xf>", firstClose);
-                                    if (endTag == std::string::npos) break;
-                                    
-                                    size_t existingProt = stXml.find("<protection ", firstClose);
-                                    if (existingProt != std::string::npos && existingProt < endTag) {
-                                        size_t lkPos = stXml.find("locked=\"", existingProt);
-                                        if (lkPos != std::string::npos && lkPos < endTag) {
-                                            if (stXml[lkPos + 8] == '1') stXml[lkPos + 8] = '0';
-                                        } else {
-                                            stXml.insert(existingProt + 12, "locked=\"0\" ");
-                                            xfsEnd = stXml.find("</cellXfs>", cur);
-                                        }
-                                    } else {
-                                        size_t alignPos = stXml.find("<alignment", firstClose);
-                                        size_t insPos = firstClose + 1;
-                                        if (alignPos != std::string::npos && alignPos < endTag) {
-                                            size_t alignEnd = stXml.find("</alignment>", alignPos);
-                                            size_t alignSelfClose = stXml.find("/>", alignPos);
-                                            if (alignEnd != std::string::npos && alignEnd < endTag) {
-                                                insPos = alignEnd + 12;
-                                            } else if (alignSelfClose != std::string::npos && alignSelfClose < endTag) {
-                                                insPos = alignSelfClose + 2;
-                                            }
-                                        }
-                                        stXml.insert(insPos, "<protection locked=\"0\" hidden=\"0\"/>");
-                                        xfsEnd = stXml.find("</cellXfs>", cur);
-                                    }
-                                    cur = stXml.find("</xf>", firstClose) + 5;
-                                }
-                            }
-                        }
-                    }
+                    UnlockStylesXml(pkg.files["xl/styles.xml"]);
                 }
             }
 
-            if (options.protectSheetContent) {
-                uint16_t pwHash = ComputeExcelPasswordHash(options.password);
-                std::stringstream hexHash;
-                hexHash << std::hex << std::uppercase << std::setw(4) << std::setfill('0') << pwHash;
-                std::string pwHashHex = hexHash.str();
-
+            // 3. 工作表保护 (针对水印保护 / 保护整个文件不受更改)
+            // 当勾选添加实体可见水印时：必须对水印对象进行锁定保护（objects="1"），
+            // 同时放行所有单元格的选择与编辑（selectUnlockedCells="1"，配合单元格已设置 locked="0"），
+            // 确保全屏实体水印不可被选中、不可被修改、不可被删除，而单元格内容完全可随意修改！
+            if (options.protectSheetContent || options.addVisibleWatermark) {
                 std::string protTag;
+                std::string pwAttr = "";
                 if (!options.password.empty()) {
-                    protTag = "<sheetProtection password=\"" + pwHashHex + "\" sheet=\"1\" objects=\"1\" scenarios=\"0\" formatCells=\"1\" formatColumns=\"1\" formatRows=\"1\" insertColumns=\"1\" insertRows=\"1\" insertHyperlinks=\"1\" deleteColumns=\"1\" deleteRows=\"1\" selectLockedCells=\"1\" sort=\"1\" autoFilter=\"1\" pivotTables=\"1\" selectUnlockedCells=\"1\"/>";
+                    uint16_t pwHash = ComputeExcelPasswordHash(options.password);
+                    std::stringstream hexHash;
+                    hexHash << std::hex << std::uppercase << std::setw(4) << std::setfill('0') << pwHash;
+                    pwAttr = " password=\"" + hexHash.str() + "\"";
+                }
+
+                if (options.protectSheetContent && !options.unlockAllCells) {
+                    // 全表锁定模式：严格禁止修改内容与对象
+                    protTag = "<sheetProtection" + pwAttr + " sheet=\"1\" objects=\"1\" scenarios=\"1\"/>";
                 } else {
-                    protTag = "<sheetProtection sheet=\"1\" objects=\"1\" scenarios=\"0\" formatCells=\"1\" formatColumns=\"1\" formatRows=\"1\" insertColumns=\"1\" insertRows=\"1\" insertHyperlinks=\"1\" deleteColumns=\"1\" deleteRows=\"1\" selectLockedCells=\"1\" sort=\"1\" autoFilter=\"1\" pivotTables=\"1\" selectUnlockedCells=\"1\"/>";
+                    // 水印保护模式：锁定图形水印对象，放行单元格编辑与输入
+                    protTag = "<sheetProtection" + pwAttr + " sheet=\"1\" objects=\"1\" scenarios=\"0\" selectLockedCells=\"1\" selectUnlockedCells=\"1\"/>";
                 }
 
                 for (auto& kv : pkg.files) {
                     if (kv.first.rfind("xl/worksheets/sheet", 0) == 0 && kv.first.find(".xml") != std::string::npos) {
                         if (kv.first.find("sheet_sysdata_cfg") != std::string::npos) continue;
-                        std::string& sXml = kv.second;
-                        size_t spPos = sXml.find("<sheetProtection");
-                        if (spPos != std::string::npos) {
-                            size_t spEnd = sXml.find("/>", spPos);
-                            if (spEnd != std::string::npos) {
-                                sXml.erase(spPos, spEnd + 2 - spPos);
-                            }
-                        }
-                        
-                        size_t insPos = std::string::npos;
-                        const char* afterTags[] = {
-                            "protectedRanges", "scenarios", "autoFilter", "sortState", "dataConsolidate",
-                            "customSheetViews", "mergeCells", "phoneticPr", "conditionalFormatting",
-                            "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup",
-                            "headerFooter", "rowBreaks", "colBreaks", "customProperties", "cellWatches",
-                            "ignoredErrors", "smartTags", "drawing", "legacyDrawing", "legacyDrawingHF",
-                            "legacyDrawingMacro", "picture", "oleObjects", "controls", "webPublishItems",
-                            "tableParts", "extLst"
-                        };
-                        for (const char* tag : afterTags) {
-                            std::string tagStr1 = std::string("<") + tag;
-                            std::string tagStr2 = std::string(":") + tag;
-                            
-                            size_t pos1 = sXml.find(tagStr1);
-                            if (pos1 != std::string::npos && pos1 < insPos) insPos = pos1;
-                            
-                            size_t pos2 = sXml.find(tagStr2);
-                            if (pos2 != std::string::npos) {
-                                size_t openBracket = sXml.rfind("<", pos2);
-                                if (openBracket != std::string::npos && openBracket < insPos) {
-                                    insPos = openBracket;
-                                }
-                            }
-                        }
-
-                        // 修复：若没有匹配到任何后续标签，插入位置必须紧跟在 </sheetData> 后面，不能随意放至文档末尾
-                        if (insPos == std::string::npos) {
-                            size_t sdEnd = sXml.find("</sheetData>");
-                            if (sdEnd != std::string::npos) {
-                                insPos = sdEnd + 12;
-                            } else {
-                                insPos = sXml.find("</worksheet>");
-                            }
-                        }
-
-                        if (insPos != std::string::npos) {
-                            sXml.insert(insPos, protTag);
-                        }
+                        InsertSheetProtection(kv.second, protTag);
                     }
                 }
             }
 
+            // 4. 添加实体可见水印 (全表平铺矩阵显示，文字半透明倾斜，背景无填充不挡鼠标点击)
             if (options.addVisibleWatermark) {
                 std::string entityWm = options.visibleWatermarkText.empty() ? "内部资料 严禁外传" : options.visibleWatermarkText;
                 
@@ -534,29 +661,7 @@ bool ExcelToolkitCore::ProcessExcelFile(
                             }
 
                             std::string drawingTag = "<drawing r:id=\"" + drawRelId + "\"/>";
-                            size_t insPos = sXml.find("</worksheet>");
-                            if (insPos == std::string::npos) insPos = sXml.length();
-                            const char* drawingAfterTags[] = {
-                                "legacyDrawing", "legacyDrawingHF", "legacyDrawingMacro", "picture", "oleObjects", "controls", "webPublishItems", "tableParts", "extLst"
-                            };
-                            for (const char* tag : drawingAfterTags) {
-                                std::string tagStr1 = std::string("<") + tag;
-                                std::string tagStr2 = std::string(":") + tag;
-                                
-                                size_t pos1 = sXml.find(tagStr1);
-                                if (pos1 != std::string::npos && pos1 < insPos) insPos = pos1;
-                                
-                                size_t pos2 = sXml.find(tagStr2);
-                                if (pos2 != std::string::npos) {
-                                    size_t openBracket = sXml.rfind("<", pos2);
-                                    if (openBracket != std::string::npos && openBracket < insPos) {
-                                        insPos = openBracket;
-                                    }
-                                }
-                            }
-                            if (insPos != std::string::npos) {
-                                sXml.insert(insPos, drawingTag);
-                            }
+                            InsertWorksheetDrawing(sXml, drawingTag);
                         }
 
                         std::string drawingXmlPath = "xl/drawings/drawing" + std::to_string(drawingId) + ".xml";
@@ -568,42 +673,47 @@ bool ExcelToolkitCore::ProcessExcelFile(
                         
                         size_t wsDrEnd = dXml.find("</xdr:wsDr>");
                         if (wsDrEnd != std::string::npos) {
-                            int shapeId = 990000 + drawingId; 
+                            // 全屏平铺矩阵：在 0~80行、0~30列范围内生成均匀分布的倾斜半透明水印文本框
+                            // 背景为 <a:noFill/>，边框为无边框，绝不拦截鼠标对单元格的点击和双击编辑！
                             std::stringstream ssShape;
-                            // 修复：移除DrawingML中非法的空属性宏及标签，提高Microsoft 365兼容性
-                            ssShape << "  <xdr:twoCellAnchor>\n"
-                                    << "    <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>\n"
-                                    << "    <xdr:to><xdr:col>100</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>100</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>\n"
-                                    << "    <xdr:sp>\n"
-                                    << "      <xdr:nvSpPr>\n"
-                                    << "        <xdr:cNvPr id=\"" << shapeId << "\" name=\"VisibleWatermark_" << shapeId << "\"/>\n"
-                                    << "        <xdr:cNvSpPr>\n"
-                                    << "          <a:spLocks noSelect=\"1\" noMove=\"1\" noResize=\"1\" noEditPoints=\"1\" noAdjustHandles=\"1\" noChangeArrowheads=\"1\" noChangeShapeType=\"1\"/>\n"
-                                    << "        </xdr:cNvSpPr>\n"
-                                    << "      </xdr:nvSpPr>\n"
-                                    << "      <xdr:spPr>\n"
-                                    << "        <a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>\n"
-                                    << "        <a:solidFill><a:srgbClr val=\"FFFFFF\"><a:alpha val=\"0\"/></a:srgbClr></a:solidFill>\n"
-                                    << "        <a:ln><a:noFill/></a:ln>\n"
-                                    << "      </xdr:spPr>\n"
-                                    << "      <xdr:txBody>\n"
-                                    << "        <a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" rtlCol=\"0\" anchor=\"ctr\"/>\n"
-                                    << "        <a:lstStyle/>\n"
-                                    << "        <a:p>\n"
-                                    << "          <a:pPr algn=\"ctr\"/>\n"
-                                    << "          <a:r>\n"
-                                    << "            <a:rPr lang=\"zh-CN\" sz=\"4800\" b=\"1\">\n"
-                                    << "              <a:solidFill><a:srgbClr val=\"000000\"><a:alpha val=\"15000\"/></a:srgbClr></a:solidFill>\n"
-                                    << "              <a:latin typeface=\"Microsoft YaHei\"/>\n"
-                                    << "              <a:ea typeface=\"Microsoft YaHei\"/>\n"
-                                    << "            </a:rPr>\n"
-                                    << "            <a:t>" << EscapeXml(entityWm) << "</a:t>\n"
-                                    << "          </a:r>\n"
-                                    << "        </a:p>\n"
-                                    << "      </xdr:txBody>\n"
-                                    << "    </xdr:sp>\n"
-                                    << "    <xdr:clientData/>\n"
-                                    << "  </xdr:twoCellAnchor>\n";
+                            int shapeCounter = 0;
+                            for (int r = 0; r <= 60; r += 15) {
+                                for (int c = 0; c <= 24; c += 8) {
+                                    int shapeId = 990000 + drawingId * 100 + shapeCounter++;
+                                    ssShape << "  <xdr:twoCellAnchor editAs=\"oneCell\">\n"
+                                            << "    <xdr:from><xdr:col>" << c << "</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>" << r << "</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>\n"
+                                            << "    <xdr:to><xdr:col>" << (c + 7) << "</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>" << (r + 10) << "</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>\n"
+                                            << "    <xdr:sp macro=\"\" textlink=\"\">\n"
+                                            << "      <xdr:nvSpPr>\n"
+                                            << "        <xdr:cNvPr id=\"" << shapeId << "\" name=\"Watermark_" << shapeId << "\"/>\n"
+                                            << "        <xdr:cNvSpPr txBox=\"1\"/>\n"
+                                            << "      </xdr:nvSpPr>\n"
+                                            << "      <xdr:spPr>\n"
+                                            << "        <a:xfrm rot=\"-1800000\"><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></a:xfrm>\n"
+                                            << "        <a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>\n"
+                                            << "        <a:noFill/>\n"
+                                            << "        <a:ln><a:noFill/></a:ln>\n"
+                                            << "      </xdr:spPr>\n"
+                                            << "      <xdr:txBody>\n"
+                                            << "        <a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"none\" rtlCol=\"0\" anchor=\"ctr\"/>\n"
+                                            << "        <a:lstStyle/>\n"
+                                            << "        <a:p>\n"
+                                            << "          <a:pPr algn=\"ctr\"/>\n"
+                                            << "          <a:r>\n"
+                                            << "            <a:rPr lang=\"zh-CN\" sz=\"2400\" b=\"1\">\n"
+                                            << "              <a:solidFill><a:srgbClr val=\"909090\"><a:alpha val=\"22000\"/></a:srgbClr></a:solidFill>\n"
+                                            << "              <a:latin typeface=\"Microsoft YaHei\"/>\n"
+                                            << "              <a:ea typeface=\"Microsoft YaHei\"/>\n"
+                                            << "            </a:rPr>\n"
+                                            << "            <a:t>" << EscapeXml(entityWm) << "</a:t>\n"
+                                            << "          </a:r>\n"
+                                            << "        </a:p>\n"
+                                            << "      </xdr:txBody>\n"
+                                            << "    </xdr:sp>\n"
+                                            << "    <xdr:clientData fLocksWithSheet=\"0\"/>\n"
+                                            << "  </xdr:twoCellAnchor>\n";
+                                }
+                            }
                             dXml.insert(wsDrEnd, ssShape.str());
                         }
 

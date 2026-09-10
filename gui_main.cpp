@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ============================================================================
  * excel-toolkit (gui_main.cpp) — Excel工具箱 (Windows 10/11 现代原生 Fluent 独立版)
  * 
@@ -434,30 +434,42 @@ void RealignControls(int clientWidth, int clientHeight) {
     int protRow3Y = protRow2Y + Scale(26);
     SetWindowPos(g_hChkProtectAll, NULL, innerX, protRow3Y, innerW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
 
-    bool isProtectChecked = (SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
-    if (isProtectChecked) {
-        // 实体水印内容行
-        int rowEntY = protRow3Y + Scale(26);
-        g_rcBoxEntityWm.left = inputX;
-        g_rcBoxEntityWm.top = rowEntY;
-        g_rcBoxEntityWm.right = inputX + totalInputW;
-        g_rcBoxEntityWm.bottom = rowEntY + rowInputH;
+    bool isEntityWmChecked = (SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    bool isLockStructChecked = (SendMessageW(g_hChkLockStruct, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    bool isProtectAllChecked = (SendMessageW(g_hChkProtectAll, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    bool needsPassword = isEntityWmChecked || isLockStructChecked || isProtectAllChecked;
 
-        int editEntY = rowEntY + (rowInputH - editH) / 2;
-        SetWindowPos(g_hLblEntityWm, NULL, innerX, rowEntY + Scale(5), lblW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
+    int currentDynamicY = protRow3Y + Scale(26);
+
+    // 实体水印内容行
+    if (isEntityWmChecked) {
+        g_rcBoxEntityWm.left = inputX;
+        g_rcBoxEntityWm.top = currentDynamicY;
+        g_rcBoxEntityWm.right = inputX + totalInputW;
+        g_rcBoxEntityWm.bottom = currentDynamicY + rowInputH;
+
+        int editEntY = currentDynamicY + (rowInputH - editH) / 2;
+        SetWindowPos(g_hLblEntityWm, NULL, innerX, currentDynamicY + Scale(5), lblW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
         SetWindowPos(g_hEditEntityWm, NULL, inputX + Scale(8), editEntY, totalInputW - Scale(16), editH, SWP_NOZORDER | SWP_NOACTIVATE);
 
-        // 密码行
-        int rowPwdY = rowEntY + rowInputH + Scale(8);
+        currentDynamicY += rowInputH + Scale(8);
+    } else {
+        g_rcBoxEntityWm = { 0, 0, 0, 0 };
+    }
+
+    // 保护密码行 (锁定工作簿结构 / 实体水印保护 / 保护整个文件 时均显示)
+    if (needsPassword) {
         int pwdInputW = Scale(220);
         g_rcBoxPwd.left = inputX;
-        g_rcBoxPwd.top = rowPwdY;
+        g_rcBoxPwd.top = currentDynamicY;
         g_rcBoxPwd.right = inputX + pwdInputW;
-        g_rcBoxPwd.bottom = rowPwdY + rowInputH;
+        g_rcBoxPwd.bottom = currentDynamicY + rowInputH;
 
-        int editPwdY = rowPwdY + (rowInputH - editH) / 2;
-        SetWindowPos(g_hLblPassword, NULL, innerX, rowPwdY + Scale(5), lblW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
+        int editPwdY = currentDynamicY + (rowInputH - editH) / 2;
+        SetWindowPos(g_hLblPassword, NULL, innerX, currentDynamicY + Scale(5), lblW, Scale(20), SWP_NOZORDER | SWP_NOACTIVATE);
         SetWindowPos(g_hEditPassword, NULL, inputX + Scale(8), editPwdY, pwdInputW - Scale(16), editH, SWP_NOZORDER | SWP_NOACTIVATE);
+    } else {
+        g_rcBoxPwd = { 0, 0, 0, 0 };
     }
 
     // 主操作大按钮 1 (加工导出)
@@ -492,7 +504,12 @@ void UpdateTabVisibility() {
     int showTab2 = (g_currentTab == 1) ? SW_SHOW : SW_HIDE;
 
     bool isEntityWmChecked = (SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
-    int showWatermarkSub = (g_currentTab == 0 && isEntityWmChecked) ? SW_SHOW : SW_HIDE;
+    bool isLockStructChecked = (SendMessageW(g_hChkLockStruct, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    bool isProtectAllChecked = (SendMessageW(g_hChkProtectAll, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    bool needsPassword = isEntityWmChecked || isLockStructChecked || isProtectAllChecked;
+
+    int showEntityWmSub = (g_currentTab == 0 && isEntityWmChecked) ? SW_SHOW : SW_HIDE;
+    int showPasswordSub = (g_currentTab == 0 && needsPassword) ? SW_SHOW : SW_HIDE;
 
     // Tab 1 常规项
     ShowWindow(g_hChkAddWm, showTab1);
@@ -504,11 +521,11 @@ void UpdateTabVisibility() {
     ShowWindow(g_hChkEntityWm, showTab1);
     ShowWindow(g_hChkProtectAll, showTab1);
 
-    // 联动项：“如果勾选保护水印，就显示实体水印与密码”
-    ShowWindow(g_hLblEntityWm, showWatermarkSub);
-    ShowWindow(g_hEditEntityWm, showWatermarkSub);
-    ShowWindow(g_hLblPassword, showWatermarkSub);
-    ShowWindow(g_hEditPassword, showWatermarkSub);
+    // 联动项：“如果勾选实体水印，就显示实体水印文本；勾选任意保护操作，就显示密码”
+    ShowWindow(g_hLblEntityWm, showEntityWmSub);
+    ShowWindow(g_hEditEntityWm, showEntityWmSub);
+    ShowWindow(g_hLblPassword, showPasswordSub);
+    ShowWindow(g_hEditPassword, showPasswordSub);
 
     ShowWindow(g_hBtnExecuteProcess, showTab1);
 
@@ -1028,9 +1045,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (g_currentTab == 0) {
             DrawEditContainer(g_rcBoxIssuer);
             DrawEditContainer(g_rcBoxWm);
-            bool isProtectChecked = (SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
-            if (isProtectChecked) {
+            bool isEntityWmChecked = (SendMessageW(g_hChkEntityWm, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            bool isLockStructChecked = (SendMessageW(g_hChkLockStruct, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            bool isProtectAllChecked = (SendMessageW(g_hChkProtectAll, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            bool needsPassword = isEntityWmChecked || isLockStructChecked || isProtectAllChecked;
+
+            if (isEntityWmChecked) {
                 DrawEditContainer(g_rcBoxEntityWm);
+            }
+            if (needsPassword) {
                 DrawEditContainer(g_rcBoxPwd);
             }
         }
@@ -1160,6 +1183,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         case IDC_BTN_BROWSE:
             OnBrowseFile();
             break;
+        case IDC_CHK_LOCK_STRUCT:
         case IDC_CHK_ENTITY_WM:
         case IDC_CHK_PROTECT_ALL:
             UpdateTabVisibility();
