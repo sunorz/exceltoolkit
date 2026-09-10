@@ -567,7 +567,7 @@ bool ExcelToolkitCore::ProcessExcelFile(
 
                 if (options.protectSheetContent && !options.unlockAllCells) {
                     // 全表锁定模式：严格禁止修改内容与对象
-                    protTag = "<sheetProtection" + pwAttr + " sheet=\"1\" objects=\"1\" scenarios=\"1\"/>";
+                    protTag = "<sheetProtection" + pwAttr + " sheet=\"1\" objects=\"1\" scenarios=\"1\" selectLockedCells=\"1\" selectUnlockedCells=\"1\"/>";
                 } else {
                     // 水印保护模式：锁定图形水印对象，放行单元格编辑与输入
                     protTag = "<sheetProtection" + pwAttr + " sheet=\"1\" objects=\"1\" scenarios=\"0\" selectLockedCells=\"1\" selectUnlockedCells=\"1\"/>";
@@ -686,7 +686,9 @@ bool ExcelToolkitCore::ProcessExcelFile(
                                             << "    <xdr:sp macro=\"\" textlink=\"\">\n"
                                             << "      <xdr:nvSpPr>\n"
                                             << "        <xdr:cNvPr id=\"" << shapeId << "\" name=\"Watermark_" << shapeId << "\"/>\n"
-                                            << "        <xdr:cNvSpPr txBox=\"1\"/>\n"
+                                            << "        <xdr:cNvSpPr txBox=\"1\">\n"
+                                            << "          <a:spLocks noSelect=\"1\" noMove=\"1\" noResize=\"1\" noEditPoints=\"1\" noAdjustHandles=\"1\" noChangeArrowheads=\"1\" noChangeShapeType=\"1\" noGrouping=\"1\"/>\n"
+                                            << "        </xdr:cNvSpPr>\n"
                                             << "      </xdr:nvSpPr>\n"
                                             << "      <xdr:spPr>\n"
                                             << "        <a:xfrm rot=\"-1800000\"><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></a:xfrm>\n"
@@ -710,7 +712,7 @@ bool ExcelToolkitCore::ProcessExcelFile(
                                             << "        </a:p>\n"
                                             << "      </xdr:txBody>\n"
                                             << "    </xdr:sp>\n"
-                                            << "    <xdr:clientData fLocksWithSheet=\"0\"/>\n"
+                                            << "    <xdr:clientData fLocksWithSheet=\"1\" fPrintsWithSheet=\"1\"/>\n"
                                             << "  </xdr:twoCellAnchor>\n";
                                 }
                             }
