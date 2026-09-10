@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ============================================================================
  * excel_toolkit_core.cpp - OpenXML / ZIP 内存安全深度实现
  * ============================================================================
@@ -692,7 +692,6 @@ bool ExcelToolkitCore::ProcessExcelFile(
             if (pkg.files.find("docProps/app.xml") != pkg.files.end()) {
                 std::string& appXml = pkg.files["docProps/app.xml"];
 
-                // 收集 workbook.xml 中当前所有 <sheet name="..."/> 的名称，顺序与出现顺序一致
                 std::vector<std::string> sheetNames;
                 size_t searchPos = 0;
                 while (true) {
@@ -730,14 +729,12 @@ bool ExcelToolkitCore::ProcessExcelFile(
                             }
                         }
                     } else {
-                        // 原文件没有 TitlesOfParts（极少数情况），补插在 </Properties> 之前
                         size_t propEnd = appXml.find("</Properties>");
                         if (propEnd != std::string::npos) {
                             appXml.insert(propEnd, "<TitlesOfParts>" + newTitlesVector + "</TitlesOfParts>");
                         }
                     }
 
-                    // 同步 HeadingPairs 里"工作表"对应的 <vt:i4> 计数
                     size_t hpPos = appXml.find("<HeadingPairs>");
                     if (hpPos != std::string::npos) {
                         size_t hpEnd = appXml.find("</HeadingPairs>");
