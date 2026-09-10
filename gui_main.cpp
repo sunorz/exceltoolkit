@@ -119,6 +119,8 @@ HWND g_hEditWmText = NULL;
 
 HWND g_hChkLockStruct = NULL;
 HWND g_hChkProtectSheet = NULL;
+HWND g_hChkEntityWm = NULL;
+HWND g_hChkProtectAll = NULL;
 HWND g_hLblEntityWm = NULL;
 HWND g_hEditEntityWm = NULL;
 HWND g_hLblPassword = NULL;
