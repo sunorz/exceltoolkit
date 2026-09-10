@@ -239,12 +239,10 @@ void LoadUserSettings() {
     GetPrivateProfileStringW(L"Settings", L"EntityWatermarkText", L"内部资料 严禁外发", szEntityWm, 255, ini.c_str());
     if (g_hEditEntityWm) SetWindowTextW(g_hEditEntityWm, szEntityWm);
 
-    // 7. 保护密码
-    wchar_t szPwd[128] = { 0 };
-    GetPrivateProfileStringW(L"Settings", L"Password", L"", szPwd, 127, ini.c_str());
-    if (g_hEditPassword) SetWindowTextW(g_hEditPassword, szPwd);
+    // 7. 密码不予记忆，每次运行启动时清空，要求重新输入
+    if (g_hEditPassword) SetWindowTextW(g_hEditPassword, L"");
 
-    // 严格满足需求：每次打开保持上次的设置，但仅仅清空文件选择框
+    // 严格满足需求：每次打开保持上次的设置，但清空文件选择框与密码框
     if (g_hEditFilePath) SetWindowTextW(g_hEditFilePath, L"");
     g_selectedFilePath = L"";
 
@@ -276,8 +274,8 @@ void SaveUserSettings() {
     if (g_hEditEntityWm) GetWindowTextW(g_hEditEntityWm, buf, 511);
     WritePrivateProfileStringW(L"Settings", L"EntityWatermarkText", buf, ini.c_str());
 
-    if (g_hEditPassword) GetWindowTextW(g_hEditPassword, buf, 511);
-    WritePrivateProfileStringW(L"Settings", L"Password", buf, ini.c_str());
+    // 密码不持久化保存，写入空值或清除
+    WritePrivateProfileStringW(L"Settings", L"Password", NULL, ini.c_str());
 }
 
 void UpdateDpi(HWND hWnd) {

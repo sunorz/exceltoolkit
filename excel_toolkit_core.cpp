@@ -336,7 +336,7 @@ bool ExcelToolkitCore::ProcessExcelFile(
                     }
                 }
 
-                // 2. 构造保护标签：objects="1" 锁定实体水印防止被选中或删除；sheet="0" 表内所有单元格完全放开自由编辑
+                // 2. 构造保护标签：objects="1" 锁定实体水印防止被选中或删除；sheet="1" 开启保护，表内所有单元格因已设为locked=0完全放开自由编辑
                 uint16_t pwHash = ComputeExcelPasswordHash(options.password);
                 std::stringstream hexHash;
                 hexHash << std::hex << std::uppercase << std::setw(4) << std::setfill('0') << pwHash;
@@ -344,9 +344,9 @@ bool ExcelToolkitCore::ProcessExcelFile(
 
                 std::string protTag;
                 if (!options.password.empty()) {
-                    protTag = "<sheetProtection password=\"" + pwHashHex + "\" sheet=\"0\" objects=\"1\" scenarios=\"0\" formatCells=\"1\" formatColumns=\"1\" formatRows=\"1\" insertColumns=\"1\" insertRows=\"1\" insertHyperlinks=\"1\" deleteColumns=\"1\" deleteRows=\"1\" selectLockedCells=\"1\" sort=\"1\" autoFilter=\"1\" pivotTables=\"1\" selectUnlockedCells=\"1\"/>";
+                    protTag = "<sheetProtection password=\"" + pwHashHex + "\" sheet=\"1\" objects=\"1\" scenarios=\"0\" formatCells=\"1\" formatColumns=\"1\" formatRows=\"1\" insertColumns=\"1\" insertRows=\"1\" insertHyperlinks=\"1\" deleteColumns=\"1\" deleteRows=\"1\" selectLockedCells=\"1\" sort=\"1\" autoFilter=\"1\" pivotTables=\"1\" selectUnlockedCells=\"1\"/>";
                 } else {
-                    protTag = "<sheetProtection sheet=\"0\" objects=\"1\" scenarios=\"0\" formatCells=\"1\" formatColumns=\"1\" formatRows=\"1\" insertColumns=\"1\" insertRows=\"1\" insertHyperlinks=\"1\" deleteColumns=\"1\" deleteRows=\"1\" selectLockedCells=\"1\" sort=\"1\" autoFilter=\"1\" pivotTables=\"1\" selectUnlockedCells=\"1\"/>";
+                    protTag = "<sheetProtection sheet=\"1\" objects=\"1\" scenarios=\"0\" formatCells=\"1\" formatColumns=\"1\" formatRows=\"1\" insertColumns=\"1\" insertRows=\"1\" insertHyperlinks=\"1\" deleteColumns=\"1\" deleteRows=\"1\" selectLockedCells=\"1\" sort=\"1\" autoFilter=\"1\" pivotTables=\"1\" selectUnlockedCells=\"1\"/>";
                 }
 
                 for (auto& kv : pkg.files) {
