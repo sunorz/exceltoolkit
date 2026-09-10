@@ -336,13 +336,18 @@ bool ExcelToolkitCore::ProcessExcelFile(
                     }
                 }
 
-                // 2. 构造工作表保护标签：objects="1" 锁定可见水印防止删除，其他所有单元格编辑全部放开
+                // 2. 构造保护标签：objects="1" 锁定实体水印防止被选中或删除；sheet="0" 表内所有单元格完全放开自由编辑
                 uint16_t pwHash = ComputeExcelPasswordHash(options.password);
                 std::stringstream hexHash;
                 hexHash << std::hex << std::uppercase << std::setw(4) << std::setfill('0') << pwHash;
                 std::string pwHashHex = hexHash.str();
 
-                std::string protTag = "<sheetProtection password=\"" + pwHashHex + "\" sheet=\"1\" objects=\"1\" scenarios=\"0\" formatCells=\"1\" formatColumns=\"1\" formatRows=\"1\" insertColumns=\"1\" insertRows=\"1\" insertHyperlinks=\"1\" deleteColumns=\"1\" deleteRows=\"1\" selectLockedCells=\"1\" sort=\"1\" autoFilter=\"1\" pivotTables=\"1\" selectUnlockedCells=\"1\"/>";
+                std::string protTag;
+                if (!options.password.empty()) {
+                    protTag = "<sheetProtection password=\"" + pwHashHex + "\" sheet=\"0\" objects=\"1\" scenarios=\"0\" formatCells=\"1\" formatColumns=\"1\" formatRows=\"1\" insertColumns=\"1\" insertRows=\"1\" insertHyperlinks=\"1\" deleteColumns=\"1\" deleteRows=\"1\" selectLockedCells=\"1\" sort=\"1\" autoFilter=\"1\" pivotTables=\"1\" selectUnlockedCells=\"1\"/>";
+                } else {
+                    protTag = "<sheetProtection sheet=\"0\" objects=\"1\" scenarios=\"0\" formatCells=\"1\" formatColumns=\"1\" formatRows=\"1\" insertColumns=\"1\" insertRows=\"1\" insertHyperlinks=\"1\" deleteColumns=\"1\" deleteRows=\"1\" selectLockedCells=\"1\" sort=\"1\" autoFilter=\"1\" pivotTables=\"1\" selectUnlockedCells=\"1\"/>";
+                }
 
                 for (auto& kv : pkg.files) {
                     if (kv.first.rfind("xl/worksheets/sheet", 0) == 0 && kv.first.find(".xml") != std::string::npos) {
@@ -355,9 +360,14 @@ bool ExcelToolkitCore::ProcessExcelFile(
                                 sXml.erase(spPos, spEnd + 2 - spPos);
                             }
                         }
-                        size_t insPos = sXml.find("</worksheet>");
-                        if (insPos != std::string::npos) {
-                            sXml.insert(insPos, protTag);
+                        size_t sdPos = sXml.find("</sheetData>");
+                        if (sdPos != std::string::npos) {
+                            sXml.insert(sdPos + 12, protTag);
+                        } else {
+                            size_t insPos = sXml.find("</worksheet>");
+                            if (insPos != std::string::npos) {
+                                sXml.insert(insPos, protTag);
+                            }
                         }
                     }
                 }

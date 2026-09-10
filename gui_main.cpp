@@ -193,6 +193,93 @@ std::string WStringToUtf8(const std::wstring& wstr) {
     return result;
 }
 
+// 记忆功能：获取配置文件路径 (与可执行文件同目录的 toolkit_config.ini)
+std::wstring GetConfigFilePath() {
+    wchar_t szExe[MAX_PATH] = { 0 };
+    GetModuleFileNameW(NULL, szExe, MAX_PATH);
+    wchar_t* p = wcsrchr(szExe, L'\\');
+    if (p) {
+        *(p + 1) = L'\0';
+    }
+    return std::wstring(szExe) + L"toolkit_config.ini";
+}
+
+// 记忆功能：加载上次设置（严格保证文件选择框清空）
+void LoadUserSettings() {
+    std::wstring ini = GetConfigFilePath();
+    DWORD dwAttr = GetFileAttributesW(ini.c_str());
+    if (dwAttr == INVALID_FILE_ATTRIBUTES) {
+        return;
+    }
+
+    // 1. 是否添加暗水印
+    int addWm = GetPrivateProfileIntW(L"Settings", L"AddWatermark", 1, ini.c_str());
+    if (g_hChkAddWm) SendMessageW(g_hChkAddWm, BM_SETCHECK, addWm ? BST_CHECKED : BST_UNCHECKED, 0);
+
+    // 2. 签发人
+    wchar_t szIssuer[256] = { 0 };
+    GetPrivateProfileStringW(L"Settings", L"Issuer", L"ADMIN", szIssuer, 255, ini.c_str());
+    if (g_hEditIssuer) SetWindowTextW(g_hEditIssuer, szIssuer);
+
+    // 3. 暗水印内容
+    wchar_t szWmText[256] = { 0 };
+    GetPrivateProfileStringW(L"Settings", L"WatermarkText", L"绝密", szWmText, 255, ini.c_str());
+    if (g_hEditWmText) SetWindowTextW(g_hEditWmText, szWmText);
+
+    // 4. 锁定工作簿结构
+    int lockStruct = GetPrivateProfileIntW(L"Settings", L"LockStructure", 1, ini.c_str());
+    if (g_hChkLockStruct) SendMessageW(g_hChkLockStruct, BM_SETCHECK, lockStruct ? BST_CHECKED : BST_UNCHECKED, 0);
+
+    // 5. 保护水印 (防删实体水印)
+    int protectWm = GetPrivateProfileIntW(L"Settings", L"ProtectWatermark", 1, ini.c_str());
+    if (g_hChkProtectSheet) SendMessageW(g_hChkProtectSheet, BM_SETCHECK, protectWm ? BST_CHECKED : BST_UNCHECKED, 0);
+
+    // 6. 实体水印内容
+    wchar_t szEntityWm[256] = { 0 };
+    GetPrivateProfileStringW(L"Settings", L"EntityWatermarkText", L"内部资料 严禁外发", szEntityWm, 255, ini.c_str());
+    if (g_hEditEntityWm) SetWindowTextW(g_hEditEntityWm, szEntityWm);
+
+    // 7. 保护密码
+    wchar_t szPwd[128] = { 0 };
+    GetPrivateProfileStringW(L"Settings", L"Password", L"", szPwd, 127, ini.c_str());
+    if (g_hEditPassword) SetWindowTextW(g_hEditPassword, szPwd);
+
+    // 严格满足需求：每次打开保持上次的设置，但仅仅清空文件选择框
+    if (g_hEditFilePath) SetWindowTextW(g_hEditFilePath, L"");
+    g_selectedFilePath = L"";
+
+    // 同步刷新动态溯源码
+    g_currentTraceId = GenerateTraceId(szIssuer);
+}
+
+// 记忆功能：保存当前设置到 toolkit_config.ini
+void SaveUserSettings() {
+    std::wstring ini = GetConfigFilePath();
+
+    int addWm = (g_hChkAddWm && SendMessageW(g_hChkAddWm, BM_GETCHECK, 0, 0) == BST_CHECKED) ? 1 : 0;
+    WritePrivateProfileStringW(L"Settings", L"AddWatermark", std::to_wstring(addWm).c_str(), ini.c_str());
+
+    wchar_t buf[512] = { 0 };
+
+    if (g_hEditIssuer) GetWindowTextW(g_hEditIssuer, buf, 511);
+    WritePrivateProfileStringW(L"Settings", L"Issuer", buf, ini.c_str());
+
+    if (g_hEditWmText) GetWindowTextW(g_hEditWmText, buf, 511);
+    WritePrivateProfileStringW(L"Settings", L"WatermarkText", buf, ini.c_str());
+
+    int lockStruct = (g_hChkLockStruct && SendMessageW(g_hChkLockStruct, BM_GETCHECK, 0, 0) == BST_CHECKED) ? 1 : 0;
+    WritePrivateProfileStringW(L"Settings", L"LockStructure", std::to_wstring(lockStruct).c_str(), ini.c_str());
+
+    int protectWm = (g_hChkProtectSheet && SendMessageW(g_hChkProtectSheet, BM_GETCHECK, 0, 0) == BST_CHECKED) ? 1 : 0;
+    WritePrivateProfileStringW(L"Settings", L"ProtectWatermark", std::to_wstring(protectWm).c_str(), ini.c_str());
+
+    if (g_hEditEntityWm) GetWindowTextW(g_hEditEntityWm, buf, 511);
+    WritePrivateProfileStringW(L"Settings", L"EntityWatermarkText", buf, ini.c_str());
+
+    if (g_hEditPassword) GetWindowTextW(g_hEditPassword, buf, 511);
+    WritePrivateProfileStringW(L"Settings", L"Password", buf, ini.c_str());
+}
+
 void UpdateDpi(HWND hWnd) {
     typedef UINT(WINAPI* GetDpiForWindowProc)(HWND);
     static GetDpiForWindowProc pGetDpiForWindow = (GetDpiForWindowProc)GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow");
@@ -339,7 +426,7 @@ void RealignControls(int clientWidth, int clientHeight) {
     int protSecY = rowWmY + rowInputH + Scale(14);
     SetWindowPos(g_hChkLockStruct, NULL, innerX, protSecY, innerW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
 
-    // 保护单元格 (防删实体水印，不限制内容修改)
+    // 保护水印 (防删实体水印，不限制内容修改)
     int protRow2Y = protSecY + Scale(26);
     SetWindowPos(g_hChkProtectSheet, NULL, innerX, protRow2Y, innerW, Scale(22), SWP_NOZORDER | SWP_NOACTIVATE);
 
@@ -412,7 +499,7 @@ void UpdateTabVisibility() {
     ShowWindow(g_hChkLockStruct, showTab1);
     ShowWindow(g_hChkProtectSheet, showTab1);
 
-    // 联动项：“如果勾选保护单元格，就显示这个水印”
+    // 联动项：“如果勾选保护水印，就显示实体水印与密码”
     ShowWindow(g_hLblEntityWm, showWatermarkSub);
     ShowWindow(g_hEditEntityWm, showWatermarkSub);
     ShowWindow(g_hLblPassword, showWatermarkSub);
@@ -518,10 +605,11 @@ void OnExecuteProcess() {
         bool ok = ExcelToolkitCore::ProcessExcelFile(inputPath, outputPath, options, err);
 
         if (ok) {
+            SaveUserSettings(); // 加工成功后自动记忆保存当前设置
             std::wstring successMsg = L"加工成功！\n已生成加密与保护文件：\n" + Utf8ToWString(outputPath) + L"\n\n已应用项目：\n";
             if (addWm) successMsg += L"  ✔ 写入 veryHidden 隐性暗水印 (防伪溯源码: " + g_currentTraceId + L")\n";
             if (lockStruct) successMsg += L"  ✔ 锁定工作簿结构（禁止取消隐藏）\n";
-            if (protectSheet) successMsg += L"  ✔ 保护单元格（实体水印平铺全表且打印可见，单元格可正常修改内容）\n";
+            if (protectSheet) successMsg += L"  ✔ 保护水印（防删实体水印，允许正常修改表格内容）\n";
 
             SetWindowTextW(g_hStaticStatus, (std::wstring(L"● 加工完成！防伪溯源码: ") + g_currentTraceId).c_str());
             MessageBoxW(g_hMainWnd, successMsg.c_str(), L"操作成功", MB_ICONINFORMATION);
@@ -781,7 +869,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                                             0, 0, 100, 20, hWnd, (HMENU)IDC_CHK_LOCK_STRUCT, g_hInstance, NULL);
         SendMessageW(g_hChkLockStruct, BM_SETCHECK, BST_CHECKED, 0);
 
-        g_hChkProtectSheet = CreateWindowExW(0, L"BUTTON", L"保护单元格 (防删实体水印，允许修改表格内容)",
+        g_hChkProtectSheet = CreateWindowExW(0, L"BUTTON", L"保护水印 (防删实体水印，允许修改表格内容)",
                                              WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                              0, 0, 100, 20, hWnd, (HMENU)IDC_CHK_PROTECT_SHEET, g_hInstance, NULL);
         SendMessageW(g_hChkProtectSheet, BM_SETCHECK, BST_CHECKED, 0);
@@ -824,6 +912,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                                            0, 0, 100, 20, hWnd, (HMENU)IDC_STATIC_STATUS, g_hInstance, NULL);
 
         ApplyFontsToControls();
+        LoadUserSettings(); // 自动恢复上次各选项设置（文件路径严格清空）
 
         RECT rcClient;
         GetClientRect(hWnd, &rcClient);
@@ -1034,6 +1123,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             break;
         case IDC_CHK_PROTECT_SHEET:
             UpdateTabVisibility();
+            SaveUserSettings();
             break;
         case IDC_BTN_EXECUTE_PROCESS:
             OnExecuteProcess();
@@ -1049,6 +1139,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     }
 
     case WM_DESTROY:
+        SaveUserSettings(); // 退出时自动保存当前各项设置
         if (g_hBrushWinBg) DeleteObject(g_hBrushWinBg);
         if (g_hBrushCardBg) DeleteObject(g_hBrushCardBg);
         if (g_hBrushEditBg) DeleteObject(g_hBrushEditBg);
